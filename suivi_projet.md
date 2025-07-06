@@ -439,4 +439,199 @@ Connecter BERZERK au monde extérieur en donnant aux agents l'accès à des **ou
    - ✅ `requirements.txt` : Toutes les dépendances Python
    - ✅ `env.example` : Variables d'environnement documentées
 
-**Justification :** Bloomberg est plus fiable et cohérent que Yahoo Finance. Cette simplification améliore la qualité des analyses et la reproductibilité du projet. 
+**Justification :** Bloomberg est plus fiable et cohérent que Yahoo Finance. Cette simplification améliore la qualité des analyses et la reproductibilité du projet.
+
+## 🚀 Phase 7 : Transformation BERZERK "TAC AU TAC" - Mode Pure Prédiction ✅
+
+### Révolution Philosophique : Du "Prudent" au "Visionnaire" 🎯
+
+**Problème stratégique identifié :** Le pipeline BERZERK, dans sa version "augmentée", était devenu un **analyste prudent** qui vérifiait si le marché avait déjà réagi à la news avant de prendre position. Cette approche, bien que sensée pour un humain, allait à l'encontre de la philosophie "tac au tac" de BERZERK : agir **AVANT** que le marché n'intègre l'information.
+
+#### Diagnostic des "Freins" Identifiés 🔍
+
+**Composants "contaminants" supprimés :**
+1. **`get_stock_price()`** - Calculait les variations vs jour précédent ❌
+2. **`get_market_sentiment()`** - Récupérait P/E, volume, capitalisation ❌
+3. **Prompt agent augmenté** - "Mentionne si le marché a déjà réagi" ❌
+4. **Pipeline orchestrateur** - Appelait `run_augmented_analysis()` ❌
+
+**Résultat :** L'IA agissait comme un **co-pilote prudent** qui regardait dans le rétroviseur au lieu d'être un **moteur de prédiction** focalisé sur la route à venir.
+
+### Implémentation du Mode "Pure Prédiction" ✅
+
+#### 1. Nouvel Agent Visionnaire (`agents.py`) ✅
+**Fonction :** `create_pure_prediction_analyst()`
+- **Philosophie :** Prédiction PURE basée uniquement sur le potentiel de la news
+- **Outils disponibles :** UNIQUEMENT `web_search_tool` pour contexte qualitatif
+- **Interdictions :** Aucune donnée de prix, volume, ou réaction de marché
+- **Prompt :** "IGNORE TOTALEMENT si le marché a déjà réagi ou non"
+
+**Fonction :** `run_pure_prediction_analysis()`
+- **Mission :** Analyse prédictive sans pollution de données historiques
+- **Focale :** Impact business fondamental prédit
+- **Vitesse :** Moins d'itérations (4 max) pour décision rapide
+
+#### 2. Orchestrateur Transformé (`orchestrator.py`) ✅
+**Modification clé :** Ligne 267 
+```python
+# AVANT (mode prudent)
+analysis = run_augmented_analysis(ticker=ticker, ...)
+"agent_type": agent['agent_type'] + "_augmented"
+"🚀 Analyse AUGMENTÉE pour {ticker} (avec outils temps réel)"
+
+# APRÈS (mode visionnaire)  
+analysis = run_pure_prediction_analysis(ticker=ticker, ...)
+"agent_type": agent['agent_type'] + "_pure_prediction"  
+"🚀 Analyse PURE PREDICTION pour {ticker} (mode 'tac au tac')"
+```
+
+#### 3. Pipeline Révolutionné 🔄
+**Nouveau flux :**
+```
+News → Ticker Hunter → Agent Pure Prédiction → Décision Visionnaire
+        ↓               ↓                       ↓
+   Tickers ciblés   Impact prédit          Action immédiate
+                  (SANS données prix)
+```
+
+### Transformation Cognitive Fondamentale 🧠
+
+#### Ancien vs Nouveau Paradigme
+| Aspect | Mode "Augmenté" (Prudent) | Mode "Pure Prédiction" (Visionnaire) |
+|--------|---------------------------|--------------------------------------|
+| **Base décision** | News + données marché | News + contexte qualitatif SEUL |
+| **Question clé** | "Le marché a-t-il réagi ?" | "Quel est l'impact futur ?" |
+| **Timing** | Après analyse du mouvement | AVANT réaction du marché |
+| **Philosophie** | Co-pilote prudent | Machine prédictive |
+| **Vitesse** | Modérée (5 itérations) | Rapide (4 itérations) |
+| **Données interdites** | ✅ Prix, P/E, volume | ❌ AUCUNE donnée financière |
+
+#### Bénéfices Révolutionnaires 🎯
+1. **Alignement stratégique** : 100% fidèle à la mission "tac au tac"
+2. **Pureté du signal** : Décision non "polluée" par la volatilité court terme
+3. **Vitesse de décision** : Plus rapide (suppression appels API financiers)
+4. **Audace retrouvée** : BERZERK redevient un système offensif
+5. **Avantage compétitif** : Agit AVANT la masse des investisseurs
+
+### Validation Technique ✅
+**Test pipeline complet :** 
+- ✅ Import `run_pure_prediction_analysis` réussi
+- ✅ Orchestrateur modifié opérationnel  
+- ✅ Logs "PURE PREDICTION (mode 'tac au tac')" confirmés
+- ✅ Pipeline exécutable sans erreur de code
+
+### Impact Transformationnel Final 🚀
+
+**BERZERK a retrouvé son âme de guerrier financier :** 
+- **AVANT :** "Analysons si le marché a déjà bougé..."
+- **APRÈS :** "Que va provoquer cette information ?"
+
+Cette transformation représente le **retour aux sources** de BERZERK : un système d'investissement **visionnaire et offensif** qui parie sur l'intelligence artificielle pure plutôt que sur la prudence humaine.
+
+## 🤔 Réflexions & Décisions - Phase 7
+
+### Décision Stratégique Majeure
+**Problème :** Tension entre sécurité (données marché) et performance (prédiction pure)
+**Solution choisie :** Mode pure prédiction avec possibilité de retour au mode augmenté
+**Justification :** L'IA doit exploiter son avantage prédictif, pas imiter la prudence humaine
+
+### Flexibilité Préservée 🔧
+- **Code augmenté conservé** : `run_augmented_analysis()` disponible si besoin
+- **Basculement facile** : Une ligne à modifier dans l'orchestrateur
+- **Choix utilisateur** : Possibilité d'implémenter un paramètre de mode
+
+**BERZERK 2.0 EST NÉ : Machine de guerre financière pure et visionnaire ! 🎯** 
+
+## 🎨 Phase 8 : Interface "Decision Feed" - Clarté Radicale ✅
+
+### Vision Révolutionnaire : De l'Ancien Dashboard au Decision Feed 🎯
+
+**Problème identifié :** L'ancien `berzerk_dashboard.py` était complexe, avec de multiples onglets et une hiérarchie d'information confuse. L'utilisateur voulait une **interface épurée, priorité à l'action, simplicité maximale**.
+
+#### Philosophie "Clarté Radicale" Implémentée 🚀
+
+**Principes de Design :**
+1. **Priorité à l'action** : Décision (ACHETER/VENDRE) visible instantanément
+2. **Simplicité** : Pas d'onglets, flux vertical unique
+3. **Hiérarchie** : Essentiel visible, détails en un clic (expander)
+
+#### Spécifications Techniques Respectées ✅
+
+**Structure de Données :**
+- ✅ **Format standard** : `action`, `ticker`, `nom_entreprise`, `news_title`, etc.
+- ✅ **Intégration DB** : Lecture directe de `decision_json` depuis `berzerk.db`
+- ✅ **Prix temps réel** : yfinance pour calcul performance
+
+**Layout Exact :**
+- ✅ **Configuration** : `st.set_page_config(layout="wide")`
+- ✅ **En-tête** : "⚡ BERZERK - Decision Feed" + sous-titre
+- ✅ **Barre statut** : 3 métriques (Statut, Décisions 24h, Achats 24h)
+- ✅ **Flux principal** : Cartes de décision avec `display_decision_card()`
+
+**Carte de Décision (spécifications exactes) :**
+- ✅ **Layout [1, 8]** : Badge action coloré + infos principales
+- ✅ **Couleurs CSS** : Vert #28a745, Rouge #dc3545, Jaune #ffc107, Gris #6c757d
+- ✅ **Section performance** : Prix décision, Prix actuel, Performance % avec emoji
+- ✅ **Expander détails** : Justification IA, Points +/-, Allocation, Lien article
+
+#### Fonctionnalités Clés Implémentées 🔧
+
+**1. Gestion des Données :**
+```python
+def load_decisions_from_db() -> List[Dict[str, Any]]
+```
+- Lecture automatique depuis `berzerk.db`
+- Filtrage des 7 derniers jours
+- Fallback sur exemples si pas de données
+
+**2. Affichage des Cartes :**
+```python
+def display_decision_card(decision: Dict[str, Any])
+```
+- Badge d'action coloré avec CSS
+- Calcul automatique de performance
+- Expander pour détails complets
+
+**3. Prix Temps Réel :**
+```python
+def get_current_price(ticker: str) -> float
+```
+- Intégration yfinance
+- Calcul automatique de performance vs prix de décision
+- Gestion d'erreurs robuste
+
+#### Validation Utilisateur ✅
+
+**Feedback :** *"ok j'aime le visuel gardons le comme ca pour l'instant"*
+
+✅ **Interface validée et prête pour utilisation**
+
+#### Impact sur l'Architecture BERZERK 📊
+
+**Ancien vs Nouveau :**
+- ❌ **Ancien** : `berzerk_dashboard.py` - Complexe, multi-onglets
+- ✅ **Nouveau** : `berzerk_decision_feed.py` - Épuré, flux unique
+
+**Intégration :**
+- ✅ Compatible avec pipeline BERZERK 2.0 (mode pure prédiction)
+- ✅ Lecture directe des décisions stockées
+- ✅ Interface responsive et moderne
+
+#### Prochaines Étapes Suggérées 🚀
+
+1. **Test avec données réelles** : Lancer monitoring + interface
+2. **Optimisations performance** : Cache pour prix, refresh automatique
+3. **Fonctionnalités avancées** : Filtres, recherche, export
+4. **Mode sombre** : Thème alternatif si demandé
+
+---
+
+## 📈 Bilan Global - BERZERK Phase 8
+
+**État Actuel : OPÉRATIONNEL ✅**
+
+- ✅ **Pipeline Pure Prédiction** : Mode "tac au tac" fonctionnel
+- ✅ **Interface Decision Feed** : Design "Clarté Radicale" validé
+- ✅ **Architecture complète** : De la collecte RSS à l'affichage décisions
+
+**BERZERK** est maintenant une **machine de guerre prédictive complète** avec interface utilisateur de qualité professionnelle. 

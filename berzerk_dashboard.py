@@ -27,74 +27,201 @@ from typing import Dict, List, Optional
 import yfinance as yf
 import time
 
-# Configuration de la page
+# Configuration de la page simplifiée
 st.set_page_config(
-    page_title="BERZERK Command Center", 
+    page_title="BERZERK - Centre de Contrôle",
+    page_icon="⚡",
     layout="wide",
-    page_icon="🎯",
     initial_sidebar_state="collapsed"
 )
 
-# Styles CSS personnalisés
+# En-tête principal SIMPLE et CLAIR
+st.markdown("""
+<div class="main-header">
+    <h1 style="color: white; font-size: 2.5rem; margin: 0; font-weight: 700;">
+        ⚡ BERZERK Command Center
+    </h1>
+    <p style="color: rgba(255,255,255,0.9); font-size: 1.2rem; margin: 0.5rem 0 0 0;">
+        Intelligence Artificielle • Analyse d'Actualités Financières • Décisions d'Investissement
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# Styles CSS ULTRA SIMPLES - Fond blanc, texte lisible
 st.markdown("""
 <style>
+    /* Fond général blanc */
+    .main {
+        background-color: #ffffff !important;
+        color: #333333 !important;
+    }
+    
+    /* Supprimer le fond sombre de Streamlit */
+    .stApp {
+        background-color: #ffffff !important;
+    }
+    
+    /* En-tête avec couleurs douces */
     .main-header {
-        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
-        padding: 1rem;
+        background: linear-gradient(135deg, #4285f4, #34a853);
+        padding: 2rem;
         border-radius: 10px;
         margin-bottom: 2rem;
         text-align: center;
+        color: white !important;
     }
     
+    /* Cartes avec bordures colorées et fond blanc */
     .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #2a5298;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin: 0.5rem 0;
-    }
-    
-    .decision-card {
-        border: 1px solid #e0e0e0;
+        background: #ffffff !important;
+        border: 2px solid #e8f0fe;
+        border-left: 5px solid #4285f4;
         border-radius: 10px;
-        padding: 1rem;
+        padding: 1.5rem;
         margin: 1rem 0;
-        background: white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        color: #333333 !important;
     }
     
-    .profit-positive {
-        color: #28a745;
-        font-weight: bold;
+    .metric-card h3 {
+        color: #1a73e8 !important;
+        font-size: 1.1rem !important;
+        margin-bottom: 0.5rem !important;
     }
     
-    .profit-negative {
-        color: #dc3545;
-        font-weight: bold;
+    /* Cartes d'articles avec fond blanc */
+    .article-card {
+        background: #ffffff !important;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        color: #333333 !important;
     }
     
-    .status-badge {
-        padding: 0.25rem 0.5rem;
-        border-radius: 15px;
-        font-size: 0.8rem;
-        font-weight: bold;
-        text-transform: uppercase;
+    /* Titre d'article en noir */
+    .article-title {
+        color: #202124 !important;
+        font-size: 1.2rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.8rem !important;
+        line-height: 1.4 !important;
     }
     
-    .status-analyzed {
-        background: #d4edda;
-        color: #155724;
+    /* Méta infos en gris */
+    .article-meta {
+        color: #5f6368 !important;
+        font-size: 0.9rem !important;
+        margin-bottom: 1rem !important;
     }
     
-    .status-pending {
-        background: #fff3cd;
-        color: #856404;
+    /* Badges d'action plus simples */
+    .badge-acheter {
+        background: #34a853 !important;
+        color: white !important;
+        padding: 0.7rem 1.5rem !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        font-size: 1rem !important;
+        display: inline-block !important;
+        margin-bottom: 1rem !important;
     }
     
-    .status-error {
-        background: #f8d7da;
-        color: #721c24;
+    .badge-surveiller {
+        background: #fbbc04 !important;
+        color: #333333 !important;
+        padding: 0.7rem 1.5rem !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        font-size: 1rem !important;
+        display: inline-block !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    .badge-vendre {
+        background: #ea4335 !important;
+        color: white !important;
+        padding: 0.7rem 1.5rem !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        font-size: 1rem !important;
+        display: inline-block !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    .badge-ignorer {
+        background: #9aa0a6 !important;
+        color: white !important;
+        padding: 0.7rem 1.5rem !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        font-size: 1rem !important;
+        display: inline-block !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Métriques en ligne plus visibles */
+    .inline-metric {
+        background: #f8f9fa !important;
+        border: 1px solid #e0e0e0 !important;
+        padding: 0.8rem !important;
+        border-radius: 6px !important;
+        margin: 0.3rem !important;
+        color: #333333 !important;
+        font-size: 0.9rem !important;
+    }
+    
+    .inline-metric strong {
+        color: #1a73e8 !important;
+    }
+    
+    /* Section headers plus clairs */
+    .section-header {
+        background: #f8f9fa !important;
+        border: 1px solid #e0e0e0 !important;
+        border-left: 4px solid #4285f4 !important;
+        padding: 1rem 1.5rem !important;
+        border-radius: 6px !important;
+        margin: 1.5rem 0 1rem 0 !important;
+        color: #333333 !important;
+    }
+    
+    .section-header h3 {
+        color: #1a73e8 !important;
+        margin: 0 !important;
+    }
+    
+    /* Améliorer les selectbox */
+    .stSelectbox > div > div {
+        background-color: #ffffff !important;
+        border: 2px solid #dadce0 !important;
+        border-radius: 6px !important;
+        color: #333333 !important;
+    }
+    
+    /* Forcer le texte en noir partout */
+    .stMarkdown, .stText, p, span, div {
+        color: #333333 !important;
+    }
+    
+    /* Onglets plus visibles */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #f8f9fa !important;
+        border-radius: 6px !important;
+        padding: 0.5rem !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent !important;
+        color: #5f6368 !important;
+        font-weight: 500 !important;
+    }
+    
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: #ffffff !important;
+        color: #1a73e8 !important;
+        font-weight: 600 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -119,60 +246,73 @@ def get_articles_with_decisions():
     conn.close()
     return articles
 
-@st.cache_data(ttl=60)  # Cache pendant 1 minute
+@st.cache_data(ttl=30)
 def get_dashboard_stats():
-    """Récupère les statistiques avancées pour le dashboard"""
-    conn = sqlite3.connect('berzerk.db')
-    cursor = conn.cursor()
-    
-    # Statistiques générales
-    cursor.execute("SELECT COUNT(*) FROM articles")
-    total_articles = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'analyzed'")
-    analyzed_count = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'pending'")
-    pending_count = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'error'")
-    error_count = cursor.fetchone()[0]
-    
-    # Statistiques des dernières 24h
-    cursor.execute("""
-        SELECT COUNT(*) FROM articles 
-        WHERE analyzed_at >= datetime('now', '-1 day')
-    """)
-    analyzed_24h = cursor.fetchone()[0]
-    
-    # Décisions d'achat - gérer les deux formats de clés
-    cursor.execute("""
-        SELECT COUNT(*) FROM articles 
-        WHERE (decision_json LIKE '%"action": "ACHETER"%' 
-               OR decision_json LIKE '%"decision": "ACHETER"%')
-    """)
-    buy_decisions = cursor.fetchone()[0]
-    
-    # Dernière analyse
-    cursor.execute("""
-        SELECT analyzed_at FROM articles 
-        WHERE status = 'analyzed' AND analyzed_at IS NOT NULL 
-        ORDER BY analyzed_at DESC LIMIT 1
-    """)
-    last_analysis = cursor.fetchone()
-    last_analysis = last_analysis[0] if last_analysis else None
-    
-    conn.close()
-    
-    return {
-        "total_articles": total_articles,
-        "analyzed_count": analyzed_count,
-        "pending_count": pending_count,
-        "error_count": error_count,
-        "analyzed_24h": analyzed_24h,
-        "buy_decisions": buy_decisions,
-        "last_analysis": last_analysis
-    }
+    """Récupère les statistiques pour le tableau de bord - VERSION SIMPLIFIÉE"""
+    try:
+        conn = sqlite3.connect('berzerk.db')
+        cursor = conn.cursor()
+        
+        # Métriques principales
+        cursor.execute("SELECT COUNT(*) FROM articles")
+        total_articles = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'analyzed'")
+        analyzed_articles = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'pending'")
+        pending_articles = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'error'")
+        error_count = cursor.fetchone()[0]
+        
+        # Décisions d'achat (recherche dans decision_json)
+        cursor.execute("""
+            SELECT COUNT(*) FROM articles 
+            WHERE status = 'analyzed' 
+            AND (decision_json LIKE '%"action": "ACHETER"%' OR decision_json LIKE '%"decision": "ACHETER"%')
+        """)
+        buy_decisions = cursor.fetchone()[0]
+        
+        # Dernière analyse
+        cursor.execute("""
+            SELECT analyzed_at FROM articles 
+            WHERE status = 'analyzed' AND analyzed_at IS NOT NULL 
+            ORDER BY analyzed_at DESC LIMIT 1
+        """)
+        last_analysis = cursor.fetchone()
+        
+        # Calculer les minutes depuis la dernière analyse
+        last_analysis_minutes = 999
+        if last_analysis and last_analysis[0]:
+            try:
+                last_time = datetime.fromisoformat(last_analysis[0])
+                time_diff = datetime.now() - last_time
+                last_analysis_minutes = int(time_diff.total_seconds() // 60)
+            except:
+                last_analysis_minutes = 999
+        
+        conn.close()
+        
+        return {
+            'total_articles': total_articles,
+            'analyzed_articles': analyzed_articles,
+            'pending_articles': pending_articles,
+            'error_count': error_count,
+            'buy_decisions': buy_decisions,
+            'last_analysis_minutes': last_analysis_minutes
+        }
+        
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des statistiques: {e}")
+        return {
+            'total_articles': 0,
+            'analyzed_articles': 0,
+            'pending_articles': 0,
+            'error_count': 0,
+            'buy_decisions': 0,
+            'last_analysis_minutes': 999
+        }
 
 @st.cache_data(ttl=300)  # Cache pendant 5 minutes
 def get_backtest_data():
@@ -302,119 +442,116 @@ def get_decision_color(action: str) -> str:
     }
     return colors.get(action, '#6c757d')
 
-def display_enhanced_article_card(article: Dict):
-    """Affiche une carte d'article améliorée avec design moderne"""
+def display_simple_article_card(article: Dict):
+    """Affiche une carte d'article ULTRA SIMPLE et LISIBLE"""
     decision = parse_decision_json(article.get('decision_json', '{}'))
     
-    # Container principal avec bordure
-    with st.container():
-        st.markdown('<div class="decision-card">', unsafe_allow_html=True)
+    # Container principal
+    st.markdown('<div class="article-card">', unsafe_allow_html=True)
+    
+    # TITRE de l'article (gros et lisible)
+    title = article['title']
+    if len(title) > 80:
+        title = title[:80] + "..."
+    
+    st.markdown(f'<div class="article-title">{title}</div>', unsafe_allow_html=True)
+    
+    # INFOS RAPIDES
+    source = article.get('source', 'Bloomberg')
+    date_str = article.get('published_date', '')
+    if date_str:
+        try:
+            date_obj = datetime.fromisoformat(date_str)
+            date_display = date_obj.strftime('%d/%m à %H:%M')
+        except:
+            date_display = 'Date inconnue'
+    else:
+        date_display = 'Date inconnue'
+    
+    st.markdown(f'<div class="article-meta">📰 {source} • 📅 {date_display}</div>', unsafe_allow_html=True)
+    
+    # CONTENU PRINCIPAL selon le statut
+    if article['status'] == 'analyzed' and decision:
+        # === ARTICLE ANALYSÉ ===
         
-        # Ligne 1: Statut et Titre
-        col1, col2 = st.columns([4, 1])
+        # Action principale (gros badge visible)
+        action = decision.get('action', decision.get('decision', 'INCONNUE')).upper()
+        ticker = decision.get('ticker', 'N/A')
+        
+        if action == 'ACHETER':
+            badge_class = 'badge-acheter'
+            message = f'✅ ACHETER'
+            if ticker != 'N/A':
+                message += f' • {ticker}'
+        elif action == 'SURVEILLER':
+            badge_class = 'badge-surveiller'
+            message = f'👀 SURVEILLER'
+            if ticker != 'N/A':
+                message += f' • {ticker}'
+        elif action == 'VENDRE':
+            badge_class = 'badge-vendre'
+            message = f'❌ VENDRE'
+            if ticker != 'N/A':
+                message += f' • {ticker}'
+        else:
+            badge_class = 'badge-ignorer'
+            message = f'⚪ IGNORER'
+        
+        st.markdown(f'<div class="{badge_class}">{message}</div>', unsafe_allow_html=True)
+        
+        # Détails importants (3 colonnes)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Titre avec taille adaptée
-            title = article['title']
-            if len(title) > 80:
-                title = title[:80] + "..."
-            st.markdown(f"**{title}**")
-            
-            # Métadonnées
-            source = article.get('source', 'Source inconnue')
-            date_str = article.get('published_date', '')
-            if date_str:
-                try:
-                    date_obj = datetime.fromisoformat(date_str)
-                    date_display = date_obj.strftime('%d/%m/%Y %H:%M')
-                except:
-                    date_display = date_str
-            else:
-                date_display = 'Date inconnue'
-            
-            st.caption(f"📰 {source} • 📅 {date_display}")
+            confidence = decision.get('confidence', decision.get('confiance', 'N/A'))
+            st.markdown(f'<div class="inline-metric"><strong>Confiance:</strong><br/>{confidence}</div>', unsafe_allow_html=True)
         
         with col2:
-            # Badge de statut
-            if article['status'] == 'analyzed':
-                action = decision.get('action', decision.get('decision', 'N/A'))
-                confidence = decision.get('confidence', decision.get('confiance', 'N/A'))
-                
-                # Badge coloré pour l'action
-                color = get_decision_color(action)
-                st.markdown(f'<div style="background-color: {color}; color: white; padding: 0.25rem 0.5rem; border-radius: 15px; text-align: center; font-size: 0.8rem; font-weight: bold;">{action}</div>', unsafe_allow_html=True)
-                
-                # Confiance
-                if confidence != 'N/A':
-                    st.caption(f"🎯 {confidence}")
-            else:
-                status_colors = {
-                    'pending': '#ffc107',
-                    'error': '#dc3545',
-                    'in_progress': '#007bff'
-                }
-                status_icons = {
-                    'pending': '⏳',
-                    'error': '❌',
-                    'in_progress': '🔄'
-                }
-                
-                color = status_colors.get(article['status'], '#6c757d')
-                icon = status_icons.get(article['status'], '❓')
-                st.markdown(f'<div style="background-color: {color}; color: white; padding: 0.25rem 0.5rem; border-radius: 15px; text-align: center; font-size: 0.8rem; font-weight: bold;">{icon} {article["status"].upper()}</div>', unsafe_allow_html=True)
+            allocation = decision.get('allocation_pourcentage', decision.get('allocation_percent', 0.0))
+            st.markdown(f'<div class="inline-metric"><strong>Allocation:</strong><br/>{allocation}%</div>', unsafe_allow_html=True)
         
-        # Ligne 2: Métriques de décision (si analysé)
-        if article['status'] == 'analyzed' and decision:
-            st.markdown("---")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                action = decision.get('action', decision.get('decision', 'N/A'))
-                st.metric("🎯 Action", action)
-            
-            with col2:
-                ticker = decision.get('ticker', 'N/A')
-                st.metric("📊 Ticker", ticker)
-            
-            with col3:
-                confidence = decision.get('confidence', decision.get('confiance', 'N/A'))
-                st.metric("🔍 Confiance", confidence)
-            
-            with col4:
-                allocation = decision.get('allocation_pourcentage', decision.get('allocation_percent', 0.0))
-                st.metric("💰 Allocation", f"{allocation}%")
-            
-            # Ligne 3: Analyse détaillée (expandable)
-            with st.expander("🕵️‍♂️ Voir l'analyse détaillée"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**✅ Points Clés Positifs:**")
-                    justification = decision.get('justification', 'Aucune justification disponible')
-                    # Simuler l'extraction de points positifs
-                    st.write(f"• {justification[:100]}...")
-                    st.write("• Analyse technique favorable")
-                    st.write("• Contexte de marché positif")
-                
-                with col2:
-                    st.markdown("**⚠️ Points Clés Négatifs & Risques:**")
-                    st.write("• Volatilité du marché")
-                    st.write("• Risques géopolitiques")
-                    st.write("• Conditions macroéconomiques")
-                
-                # Justification complète
-                st.markdown("**📝 Justification Complète:**")
+        with col3:
+            if ticker != 'N/A':
+                st.markdown(f'<div class="inline-metric"><strong>Titre:</strong><br/>{ticker}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="inline-metric"><strong>Statut:</strong><br/>Pas de titre</div>', unsafe_allow_html=True)
+        
+        # Justification (simple)
+        justification = decision.get('justification', '')
+        if len(justification) > 20:
+            with st.expander("📋 Voir le raisonnement complet"):
                 st.write(justification)
         
-        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        # === ARTICLE NON ANALYSÉ ===
+        if article['status'] == 'pending':
+            st.markdown('**🕒 EN ATTENTE D\'ANALYSE**')
+            st.info('Cet article sera analysé bientôt.')
+        elif article['status'] == 'in_progress':
+            st.markdown('**⚡ ANALYSE EN COURS**')
+            st.info('L\'IA analyse cet article maintenant.')
+        elif article['status'] == 'error':
+            st.markdown('**❌ ERREUR**')
+            st.error('Problème lors de l\'analyse.')
+        else:
+            st.markdown(f'**❓ STATUT: {article["status"].upper()}**')
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")  # Séparateur visible
 
 def display_live_feed_tab():
-    """Affiche l'onglet Live Feed amélioré"""
-    st.markdown('<div class="main-header"><h1>📈 Live Feed - Analyses Temps Réel</h1></div>', unsafe_allow_html=True)
+    """Affiche l'onglet Live Feed ultra-simplifié"""
     
-    # Boutons de contrôle
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 5])
+    # Récupération des statistiques
+    stats = get_dashboard_stats()
+    
+    # EN-TÊTE SIMPLE
+    st.markdown("# 📈 Analyses en Temps Réel")
+    st.markdown("Surveillance automatique des actualités financières Bloomberg")
+    st.markdown("---")
+    
+    # Controls rapides
+    col1, col2 = st.columns([1, 3])
     
     with col1:
         if st.button("🔄 Actualiser", type="primary"):
@@ -422,138 +559,81 @@ def display_live_feed_tab():
             st.rerun()
     
     with col2:
-        auto_refresh = st.checkbox("Auto-refresh", value=False)
+        auto_refresh = st.checkbox("🔁 Auto-actualisation", value=False, help="Actualise automatiquement toutes les 30 secondes")
+        if auto_refresh:
+            time.sleep(30)
+            st.rerun()
     
-    with col3:
-        if st.button("🧹 Vider Cache"):
-            st.cache_data.clear()
-            st.success("Cache vidé !")
+    # TABLEAU DE BORD SIMPLE
+    st.markdown("## 📊 Situation Actuelle")
     
-    # Statistiques globales améliorées
-    st.markdown("### 📊 Tableau de Bord Exécutif")
-    stats = get_dashboard_stats()
-    
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric(
-            "📰 Total Articles", 
+            "📰 Articles Total", 
             stats['total_articles'],
             help="Nombre total d'articles dans la base"
         )
     
     with col2:
-        delta_analyzed = stats['analyzed_24h'] if stats['analyzed_24h'] > 0 else None
+        analyzed_count = stats['analyzed_articles']
         st.metric(
             "✅ Analysés", 
-            stats['analyzed_count'],
-            delta=f"+{delta_analyzed} (24h)" if delta_analyzed else None,
-            help="Articles analysés avec succès"
+            analyzed_count,
+            help="Articles analysés par l'IA"
         )
     
     with col3:
+        buy_count = stats.get('buy_decisions', 0)
         st.metric(
-            "⏳ En Attente", 
-            stats['pending_count'],
-            help="Articles en attente d'analyse"
+            "🎯 Opportunités", 
+            buy_count,
+            help="Recommandations d'achat détectées"
         )
     
-    with col4:
-        st.metric(
-            "🎯 Décisions d'Achat", 
-            stats['buy_decisions'],
-            help="Nombre total de décisions d'achat"
-        )
+    # FILTRES SIMPLES
+    st.markdown("---")
+    st.markdown("## 🔍 Filtres")
     
-    with col5:
-        st.metric(
-            "❌ Erreurs", 
-            stats['error_count'],
-            help="Articles avec erreurs d'analyse"
-        )
-    
-    with col6:
-        if stats['last_analysis']:
-            try:
-                last_time = datetime.fromisoformat(stats['last_analysis'].replace('Z', '+00:00'))
-                time_diff = datetime.now() - last_time.replace(tzinfo=None)
-                minutes_ago = int(time_diff.total_seconds() // 60)
-                st.metric(
-                    "🕒 Dernière Analyse", 
-                    f"{minutes_ago}min",
-                    help="Temps écoulé depuis la dernière analyse"
-                )
-            except:
-                st.metric("🕒 Dernière Analyse", "Erreur")
-        else:
-            st.metric("🕒 Dernière Analyse", "Jamais")
-    
-    # Filtres avancés
-    st.markdown("### 🔍 Filtres Avancés")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     
     with col1:
-        status_filter = st.selectbox(
-            "Statut", 
-            ["Tous", "analyzed", "pending", "in_progress", "error"],
-            index=0
+        show_filter = st.selectbox(
+            "Afficher:",
+            ["Tous les articles", "Seulement les analysés", "Seulement les recommandations d'achat"]
         )
     
     with col2:
-        action_filter = st.selectbox(
-            "Action",
-            ["Toutes", "ACHETER", "VENDRE", "SURVEILLER", "IGNORER"],
-            index=0
+        period_filter = st.selectbox(
+            "Période:",
+            ["Toutes", "Dernières 24h", "Cette semaine"]
         )
     
-    with col3:
-        days_filter = st.selectbox(
-            "Période",
-            ["Tout", "Dernières 24h", "7 derniers jours", "30 derniers jours"],
-            index=0
-        )
-    
-    with col4:
-        confidence_filter = st.selectbox(
-            "Confiance",
-            ["Toutes", "ÉLEVÉE", "MOYENNE", "FAIBLE"],
-            index=0
-        )
-    
-    # Récupération et filtrage des articles
+    # RÉCUPÉRATION ET FILTRAGE DES ARTICLES
     articles = get_articles_with_decisions()
     
     # Application des filtres
-    if status_filter != "Tous":
-        articles = [a for a in articles if a['status'] == status_filter]
+    if show_filter == "Seulement les analysés":
+        articles = [a for a in articles if a['status'] == 'analyzed']
+    elif show_filter == "Seulement les recommandations d'achat":
+        articles = [a for a in articles if a['status'] == 'analyzed' and 'ACHETER' in str(a.get('decision_json', ''))]
     
-    if action_filter != "Toutes":
-        articles = [a for a in articles if action_filter in str(a.get('decision_json', ''))]
-    
-    if days_filter != "Tout":
-        days_map = {"Dernières 24h": 1, "7 derniers jours": 7, "30 derniers jours": 30}
-        days = days_map[days_filter]
+    if period_filter != "Toutes":
+        days_map = {"Dernières 24h": 1, "Cette semaine": 7}
+        days = days_map[period_filter]
         cutoff_date = datetime.now() - timedelta(days=days)
         articles = [a for a in articles if datetime.fromisoformat(a.get('published_date', '1970-01-01')) > cutoff_date]
     
-    if confidence_filter != "Toutes":
-        articles = [a for a in articles if confidence_filter in str(a.get('decision_json', ''))]
+    # AFFICHAGE DES ARTICLES
+    st.markdown("---")
+    st.markdown(f"## 📋 Articles ({len(articles)} résultats)")
     
-    # Affichage des articles
-    st.markdown(f"### 📋 Articles Filtrés ({len(articles)} résultats)")
-    
-    if not articles:
-        st.warning("Aucun article ne correspond aux critères de filtrage.")
-        return
-    
-    # Affichage des cartes d'articles
-    for article in articles:
-        display_enhanced_article_card(article)
-    
-    # Auto-refresh
-    if auto_refresh:
-        time.sleep(30)
-        st.rerun()
+    if len(articles) == 0:
+        st.info("🔍 Aucun article trouvé avec ces filtres.")
+    else:
+        for article in articles:
+            display_simple_article_card(article)
 
 def display_performance_tab():
     """Affiche l'onglet Performance & Backtest"""
@@ -774,15 +854,6 @@ def display_performance_tab():
 
 def main():
     """Interface principale du BERZERK Command Center"""
-    
-    # En-tête principal
-    st.markdown("""
-    <div style="text-align: center; background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%); 
-                padding: 2rem; border-radius: 10px; margin-bottom: 2rem;">
-        <h1 style="color: white; margin: 0;">🎯 BERZERK COMMAND CENTER</h1>
-        <p style="color: #e0e0e0; margin: 0;">Analyse Automatisée • Décisions Intelligentes • Performance Optimisée</p>
-    </div>
-    """, unsafe_allow_html=True)
     
     # Navigation par onglets
     tab1, tab2 = st.tabs(["📈 Live Feed", "🏆 Performance & Backtest"])

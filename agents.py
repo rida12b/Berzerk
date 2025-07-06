@@ -643,6 +643,108 @@ def run_augmented_analysis(ticker: str, news_summary: str, full_article_text: st
     except Exception as e:
         return f"❌ **Erreur dans l'analyse augmentée :** {str(e)}"
 
+# --- AGENTS PURE PREDICTION (MODE BERZERK TAC AU TAC) ---
+
+def create_pure_prediction_analyst(focus_ticker: str = None) -> AgentExecutor:
+    """
+    Crée un agent analyste "pur" qui se base UNIQUEMENT sur l'analyse textuelle
+    et le contexte web, sans accès aux données de prix en temps réel.
+    
+    Args:
+        focus_ticker: Ticker à analyser en priorité (optionnel)
+    
+    Returns:
+        AgentExecutor configuré sans outils financiers
+    """
+    if not llm:
+        raise ValueError("LLM non disponible pour créer l'agent de prédiction pure")
+
+    # Outils disponibles : UNIQUEMENT la recherche web pour le contexte qualitatif
+    tools = []
+    if web_search_tool:
+        tools.append(web_search_tool)
+    
+    focus_instruction = f" Tu te concentres principalement sur {focus_ticker}." if focus_ticker else ""
+    
+    # Un prompt entièrement réorienté vers la prédiction
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", f"""Tu es un analyste financier visionnaire pour le fonds BERZERK. Ta mission est de prédire l'impact FUTUR d'une news, SANS te soucier de la réaction passée du marché. Tu agis "tac au tac".{focus_instruction}
+
+**Ton seul outil disponible :**
+- web_search_tool : Pour obtenir plus de contexte QUALITATIF sur la news (produits, concurrents, technologie).
+
+**Ton processus de prédiction :**
+1. Analyse en profondeur la news fournie.
+2. Si nécessaire, utilise la recherche web pour comprendre le contexte (ex: "Qu'est-ce que la technologie X mentionnée ?"). N'UTILISE PAS la recherche pour les prix.
+3. Sur la base EXCLUSIVE de l'information et de son contexte, produis une prédiction d'impact et une recommandation d'action immédiate.
+
+**Règles CRITIQUES :**
+- IGNORE TOTALEMENT si le marché a déjà réagi ou non.
+- Ta décision doit être une PURE PRÉDICTION basée sur le potentiel de la news.
+- Sois décisif et direct. Le but est d'agir avant tout le monde.
+- Base tes recommandations sur l'impact business fondamental prédit."""),
+        
+        ("user", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),
+    ])
+    
+    # Création de l'agent
+    agent = create_tool_calling_agent(llm, tools, prompt)
+    
+    # Création de l'exécuteur
+    agent_executor = AgentExecutor(
+        agent=agent,
+        tools=tools,
+        verbose=True,  # Pour voir le processus de réflexion
+        max_iterations=4,  # Moins d'itérations pour être plus rapide
+        early_stopping_method="generate"  # Arrêt anticipé si nécessaire
+    )
+    
+    return agent_executor
+
+def run_pure_prediction_analysis(ticker: str, news_summary: str, full_article_text: str) -> str:
+    """
+    Exécute une analyse de prédiction pure sans données de marché historiques.
+    
+    Args:
+        ticker: Ticker à analyser
+        news_summary: Résumé de la news
+        full_article_text: Texte complet de l'article
+    
+    Returns:
+        Analyse de prédiction pure
+    """
+    try:
+        # Création de l'agent de prédiction pure pour ce ticker
+        agent_executor = create_pure_prediction_analyst(focus_ticker=ticker)
+        
+        # Préparation de la requête orientée prédiction
+        query = f"""
+        Analyse l'impact prédictif de cette news sur l'action {ticker}.
+        
+        **Résumé de la news :**
+        {news_summary}
+        
+        **Texte complet :**
+        {full_article_text[:2000]}...
+        
+        **Ta mission PURE PREDICTION :**
+        1. Évalue la magnitude de cette information sur le business futur.
+        2. Détermine le sentiment prédictif (très positif, positif, neutre, négatif, très négatif).
+        3. Produis une recommandation d'action immédiate (Acheter, Vendre, Surveiller) et une justification basée sur ta prédiction.
+        4. Si nécessaire, recherche des informations contextuelles qualitatives (technologie, secteur, concurrence).
+        
+        INTERDIT : Aucune donnée de prix, volume ou réaction de marché. Ta décision doit être instantanée et visionnaire.
+        """
+        
+        # Exécution de l'analyse
+        result = agent_executor.invoke({"input": query})
+        
+        return result.get("output", "Erreur dans l'analyse de prédiction pure.")
+        
+    except Exception as e:
+        return f"❌ **Erreur dans l'analyse de prédiction pure :** {str(e)}"
+
 # --- FONCTIONS UTILITAIRES ---
 
 def get_available_agents() -> List[str]:

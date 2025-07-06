@@ -22,7 +22,12 @@ from langchain_core.output_parsers import JsonOutputParser
 
 # Imports depuis nos modules existants
 from berzerk_lab import get_article_text, analyze_news_with_llm
-from agents import route_to_agents, run_agent_analysis, run_ticker_hunter, run_augmented_analysis, AGENT_PROFILES, llm
+from agents import (
+    route_to_agents, run_agent_analysis, run_ticker_hunter, 
+    run_augmented_analysis, # Garde pour flexibilité
+    run_pure_prediction_analysis, # NOUVEAU : Agent de prédiction pure
+    AGENT_PROFILES, llm
+)
 
 # --- DÉFINITION DE L'ÉTAT DU GRAPHE ---
 
@@ -222,8 +227,8 @@ def node_route_to_agents(state: GraphState) -> GraphState:
     return state
 
 def node_run_agent_analyses(state: GraphState) -> GraphState:
-    """Nœud 4 : Exécute les analyses de chaque agent spécialisé (avec agents augmentés)."""
-    log_step(state, "EXÉCUTION - Analyses spécialisées avec outils temps réel")
+    """Nœud 4 : Exécute les analyses de chaque agent spécialisé (mode PURE PREDICTION)."""
+    log_step(state, "EXÉCUTION - Analyses spécialisées PURE PREDICTION (mode 'tac au tac')")
     
     try:
         if not state['agent_team']:
@@ -260,24 +265,25 @@ def node_run_agent_analyses(state: GraphState) -> GraphState:
                         break
                 
                 if ticker:
-                    log_step(state, f"🚀 Analyse AUGMENTÉE pour {ticker} (avec outils temps réel)")
+                    log_step(state, f"🚀 Analyse PURE PREDICTION pour {ticker} (mode 'tac au tac')")
                     
-                    # Utiliser l'agent augmenté avec accès aux outils
-                    analysis = run_augmented_analysis(
+                    # === MODIFICATION CLÉ ICI ===
+                    # Utiliser l'agent de pure prédiction sans données de prix
+                    analysis = run_pure_prediction_analysis(
                         ticker=ticker,
                         news_summary=state['news_summary'],
                         full_article_text=state['full_article_text']
                     )
                     
                     agent_analyses.append({
-                        "agent_type": agent['agent_type'] + "_augmented",  # Marquer comme augmenté
+                        "agent_type": agent['agent_type'] + "_pure_prediction",  # Marquer le mode
                         "focus": agent['focus'],
                         "analysis": analysis,
                         "ticker": ticker,
-                        "is_augmented": True
+                        "is_augmented": False  # Il n'est plus "augmenté" avec des données de prix
                     })
                     
-                    log_step(state, f"✅ Analyse AUGMENTÉE terminée pour {ticker}")
+                    log_step(state, f"✅ Analyse PURE PREDICTION terminée pour {ticker}")
                 else:
                     # Fallback vers l'analyse classique
                     log_step(state, f"⚠️ Ticker non trouvé, analyse classique pour {focus_text}")
@@ -319,9 +325,9 @@ def node_run_agent_analyses(state: GraphState) -> GraphState:
         # Formatage du debriefing pour le superviseur
         state['agent_debriefing'] = format_debriefing(agent_analyses)
         
-        # Compter les analyses augmentées
-        augmented_count = sum(1 for a in agent_analyses if a.get('is_augmented', False))
-        log_step(state, f"✅ Debriefing consolidé - {len(agent_analyses)} analyses ({augmented_count} augmentée(s))")
+        # Compter les analyses pure prediction
+        pure_prediction_count = sum(1 for a in agent_analyses if "pure_prediction" in a.get('agent_type', ''))
+        log_step(state, f"✅ Debriefing consolidé - {len(agent_analyses)} analyses ({pure_prediction_count} pure prediction)")
         
     except Exception as e:
         log_step(state, f"❌ ERREUR dans les analyses d'agents: {str(e)}")
