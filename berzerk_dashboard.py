@@ -10,14 +10,15 @@ Auteur: BERZERK Team
 Phase: 8.1 - Ajout du suivi de performance instantané
 """
 
-import streamlit as st
-import sqlite3
-import json
 import hashlib
+import json
+import sqlite3
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
-import yfinance as yf
+from typing import Any
+
 import plotly.graph_objects as go
+import streamlit as st
+import yfinance as yf
 
 # Configuration de la page
 st.set_page_config(
@@ -156,28 +157,28 @@ def get_sparkline_chart(ticker: str):
                 x=hist.index,
                 y=hist["Close"],
                 mode="lines",
-                line=dict(color=color, width=2.5),
+                line={"color": color, "width": 2.5},
                 fill="tozeroy",
                 fillcolor=fill_color,
             )
         )
         fig.update_layout(
             height=50,
-            margin=dict(l=0, r=0, t=5, b=0),
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
+            margin={"l": 0, "r": 0, "t": 5, "b": 0},
+            xaxis={"visible": False},
+            yaxis={"visible": False},
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             showlegend=False,
         )
         return fig, trend
-    except Exception as e:
+    except Exception:
         # Gestion silencieuse des erreurs
         return None, "N/A"
 
 
 @st.cache_data(ttl=60)  # Cache de 60 secondes
-def load_decisions_from_db() -> List[Dict[str, Any]]:
+def load_decisions_from_db() -> list[dict[str, Any]]:
     """Charge les décisions depuis la DB et les enrichit avec les données de performance."""
     try:
         conn = sqlite3.connect("berzerk.db")
@@ -186,7 +187,7 @@ def load_decisions_from_db() -> List[Dict[str, Any]]:
         cursor.execute(
             """
             SELECT title, link, published_date, decision_json, analyzed_at
-            FROM articles 
+            FROM articles
             WHERE decision_json IS NOT NULL AND status = 'analyzed'
             AND analyzed_at >= datetime('now', '-30 days')
             ORDER BY analyzed_at DESC
@@ -197,7 +198,7 @@ def load_decisions_from_db() -> List[Dict[str, Any]]:
         conn.close()
 
         decisions = []
-        for title, link, published_date, decision_json, analyzed_at in rows:
+        for title, link, _published_date, decision_json, analyzed_at in rows:
             try:
                 decision_data = json.loads(decision_json)
                 action = decision_data.get(
@@ -263,7 +264,7 @@ def load_decisions_from_db() -> List[Dict[str, Any]]:
         return []
 
 
-def get_sample_decisions() -> List[Dict[str, Any]]:
+def get_sample_decisions() -> list[dict[str, Any]]:
     """Génère des décisions d'exemple pour la démonstration (avec données de performance)."""
     return [
         {
@@ -340,7 +341,7 @@ def get_sample_decisions() -> List[Dict[str, Any]]:
     ]
 
 
-def display_decision_card(decision: Dict[str, Any]):
+def display_decision_card(decision: dict[str, Any]):
     """Affiche une carte de décision 2.1 avec suivi de performance intégré."""
     action = decision["action"]
     color_map = {
@@ -410,8 +411,6 @@ def display_decision_card(decision: Dict[str, Any]):
                     / decision["prix_decision"]
                 ) * 100
 
-            perf_color = "perf-positive" if perf_pct >= 0 else "perf-negative"
-            perf_emoji = "📈" if perf_pct >= 0 else "📉"
 
             with perf_cols[0]:
                 st.metric("Prix à la décision", f"{decision['prix_decision']:.2f} $")
@@ -436,7 +435,7 @@ def display_decision_card(decision: Dict[str, Any]):
         try:
             stock_info = yf.Ticker(decision["ticker"]).info
             sector = stock_info.get("sector", "N/A")
-        except:
+        except Exception:
             pass
 
         with kpi_cols[0]:
@@ -529,7 +528,7 @@ def main():
             font-weight: 600;
             color: #202124;
         }
-        
+
         /* NOUVEAUX STYLES POUR LA PERFORMANCE */
         .perf-container {
             border: 1px solid #e0e0e0;

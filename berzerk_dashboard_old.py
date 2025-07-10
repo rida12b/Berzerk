@@ -16,16 +16,15 @@ Fonctionnalités:
 Usage: streamlit run berzerk_dashboard.py
 """
 
-import streamlit as st
-import sqlite3
 import json
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-import yfinance as yf
+import sqlite3
 import time
+from datetime import datetime, timedelta
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+import yfinance as yf
 
 # Configuration de la page simplifiée
 st.set_page_config(
@@ -59,12 +58,12 @@ st.markdown(
         background-color: #ffffff !important;
         color: #333333 !important;
     }
-    
+
     /* Supprimer le fond sombre de Streamlit */
     .stApp {
         background-color: #ffffff !important;
     }
-    
+
     /* En-tête avec couleurs douces */
     .main-header {
         background: linear-gradient(135deg, #4285f4, #34a853);
@@ -74,7 +73,7 @@ st.markdown(
         text-align: center;
         color: white !important;
     }
-    
+
     /* Cartes avec bordures colorées et fond blanc */
     .metric-card {
         background: #ffffff !important;
@@ -86,13 +85,13 @@ st.markdown(
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         color: #333333 !important;
     }
-    
+
     .metric-card h3 {
         color: #1a73e8 !important;
         font-size: 1.1rem !important;
         margin-bottom: 0.5rem !important;
     }
-    
+
     /* Cartes d'articles avec fond blanc */
     .article-card {
         background: #ffffff !important;
@@ -103,7 +102,7 @@ st.markdown(
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         color: #333333 !important;
     }
-    
+
     /* Titre d'article en noir */
     .article-title {
         color: #202124 !important;
@@ -112,14 +111,14 @@ st.markdown(
         margin-bottom: 0.8rem !important;
         line-height: 1.4 !important;
     }
-    
+
     /* Méta infos en gris */
     .article-meta {
         color: #5f6368 !important;
         font-size: 0.9rem !important;
         margin-bottom: 1rem !important;
     }
-    
+
     /* Badges d'action plus simples */
     .badge-acheter {
         background: #34a853 !important;
@@ -131,7 +130,7 @@ st.markdown(
         display: inline-block !important;
         margin-bottom: 1rem !important;
     }
-    
+
     .badge-surveiller {
         background: #fbbc04 !important;
         color: #333333 !important;
@@ -142,7 +141,7 @@ st.markdown(
         display: inline-block !important;
         margin-bottom: 1rem !important;
     }
-    
+
     .badge-vendre {
         background: #ea4335 !important;
         color: white !important;
@@ -153,7 +152,7 @@ st.markdown(
         display: inline-block !important;
         margin-bottom: 1rem !important;
     }
-    
+
     .badge-ignorer {
         background: #9aa0a6 !important;
         color: white !important;
@@ -164,7 +163,7 @@ st.markdown(
         display: inline-block !important;
         margin-bottom: 1rem !important;
     }
-    
+
     /* Métriques en ligne plus visibles */
     .inline-metric {
         background: #f8f9fa !important;
@@ -175,11 +174,11 @@ st.markdown(
         color: #333333 !important;
         font-size: 0.9rem !important;
     }
-    
+
     .inline-metric strong {
         color: #1a73e8 !important;
     }
-    
+
     /* Section headers plus clairs */
     .section-header {
         background: #f8f9fa !important;
@@ -190,12 +189,12 @@ st.markdown(
         margin: 1.5rem 0 1rem 0 !important;
         color: #333333 !important;
     }
-    
+
     .section-header h3 {
         color: #1a73e8 !important;
         margin: 0 !important;
     }
-    
+
     /* Améliorer les selectbox */
     .stSelectbox > div > div {
         background-color: #ffffff !important;
@@ -203,25 +202,25 @@ st.markdown(
         border-radius: 6px !important;
         color: #333333 !important;
     }
-    
+
     /* Forcer le texte en noir partout */
     .stMarkdown, .stText, p, span, div {
         color: #333333 !important;
     }
-    
+
     /* Onglets plus visibles */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #f8f9fa !important;
         border-radius: 6px !important;
         padding: 0.5rem !important;
     }
-    
+
     .stTabs [data-baseweb="tab"] {
         background-color: transparent !important;
         color: #5f6368 !important;
         font-weight: 500 !important;
     }
-    
+
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background-color: #ffffff !important;
         color: #1a73e8 !important;
@@ -246,7 +245,7 @@ def get_articles_with_decisions():
 
     cursor.execute(
         """
-        SELECT * FROM articles 
+        SELECT * FROM articles
         ORDER BY published_date DESC
     """
     )
@@ -279,8 +278,8 @@ def get_dashboard_stats():
         # Décisions d'achat (recherche dans decision_json)
         cursor.execute(
             """
-            SELECT COUNT(*) FROM articles 
-            WHERE status = 'analyzed' 
+            SELECT COUNT(*) FROM articles
+            WHERE status = 'analyzed'
             AND (decision_json LIKE '%"action": "ACHETER"%' OR decision_json LIKE '%"decision": "ACHETER"%')
         """
         )
@@ -289,8 +288,8 @@ def get_dashboard_stats():
         # Dernière analyse
         cursor.execute(
             """
-            SELECT analyzed_at FROM articles 
-            WHERE status = 'analyzed' AND analyzed_at IS NOT NULL 
+            SELECT analyzed_at FROM articles
+            WHERE status = 'analyzed' AND analyzed_at IS NOT NULL
             ORDER BY analyzed_at DESC LIMIT 1
         """
         )
@@ -303,7 +302,7 @@ def get_dashboard_stats():
                 last_time = datetime.fromisoformat(last_analysis[0])
                 time_diff = datetime.now() - last_time
                 last_analysis_minutes = int(time_diff.total_seconds() // 60)
-            except:
+            except Exception:
                 last_analysis_minutes = 999
 
         conn.close()
@@ -338,9 +337,9 @@ def get_backtest_data():
     # Récupérer les décisions d'achat
     cursor.execute(
         """
-        SELECT id, title, published_date, decision_json 
-        FROM articles 
-        WHERE decision_json IS NOT NULL 
+        SELECT id, title, published_date, decision_json
+        FROM articles
+        WHERE decision_json IS NOT NULL
         AND status = "analyzed"
         ORDER BY published_date DESC
     """
@@ -381,7 +380,7 @@ def get_backtest_data():
                             ),
                         }
                     )
-        except:
+        except Exception:
             continue
 
     return buy_decisions
@@ -389,7 +388,7 @@ def get_backtest_data():
 
 def simulate_trade_performance(
     ticker: str, decision_date: datetime, holding_days: int = 7
-) -> Optional[Dict]:
+) -> dict | None:
     """Simule la performance d'un trade"""
     try:
         # Calculer les dates
@@ -445,7 +444,7 @@ def simulate_trade_performance(
             "sell_date": sell_date,
         }
 
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -454,13 +453,13 @@ def simulate_trade_performance(
 # =============================================================================
 
 
-def parse_decision_json(decision_json: str) -> Dict:
+def parse_decision_json(decision_json: str) -> dict:
     """Parse le JSON de décision de manière sécurisée"""
     if not decision_json:
         return {}
     try:
         return json.loads(decision_json)
-    except:
+    except Exception:
         return {}
 
 
@@ -475,7 +474,7 @@ def get_decision_color(action: str) -> str:
     return colors.get(action, "#6c757d")
 
 
-def display_simple_article_card(article: Dict):
+def display_simple_article_card(article: dict):
     """Affiche une carte d'article ULTRA SIMPLE et LISIBLE"""
     decision = parse_decision_json(article.get("decision_json", "{}"))
 
@@ -496,7 +495,7 @@ def display_simple_article_card(article: Dict):
         try:
             date_obj = datetime.fromisoformat(date_str)
             date_display = date_obj.strftime("%d/%m à %H:%M")
-        except:
+        except Exception:
             date_display = "Date inconnue"
     else:
         date_display = "Date inconnue"
@@ -516,22 +515,22 @@ def display_simple_article_card(article: Dict):
 
         if action == "ACHETER":
             badge_class = "badge-acheter"
-            message = f"✅ ACHETER"
+            message = "✅ ACHETER"
             if ticker != "N/A":
                 message += f" • {ticker}"
         elif action == "SURVEILLER":
             badge_class = "badge-surveiller"
-            message = f"👀 SURVEILLER"
+            message = "👀 SURVEILLER"
             if ticker != "N/A":
                 message += f" • {ticker}"
         elif action == "VENDRE":
             badge_class = "badge-vendre"
-            message = f"❌ VENDRE"
+            message = "❌ VENDRE"
             if ticker != "N/A":
                 message += f" • {ticker}"
         else:
             badge_class = "badge-ignorer"
-            message = f"⚪ IGNORER"
+            message = "⚪ IGNORER"
 
         st.markdown(
             f'<div class="{badge_class}">{message}</div>', unsafe_allow_html=True
@@ -564,7 +563,7 @@ def display_simple_article_card(article: Dict):
                 )
             else:
                 st.markdown(
-                    f'<div class="inline-metric"><strong>Statut:</strong><br/>Pas de titre</div>',
+                    '<div class="inline-metric"><strong>Statut:</strong><br/>Pas de titre</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -778,7 +777,6 @@ def display_performance_tab():
         )
 
     with col2:
-        color = "normal" if avg_roi >= 0 else "inverse"
         st.metric(
             "📊 ROI Moyen",
             f"{avg_roi:+.2f}%",
@@ -823,8 +821,8 @@ def display_performance_tab():
             y=df_perf["Capital"],
             mode="lines+markers",
             name="Capital Cumulé",
-            line=dict(color="#2a5298", width=3),
-            marker=dict(size=6),
+            line={"color": "#2a5298", "width": 3},
+            marker={"size": 6},
             hovertemplate="<b>Trade %{x}</b><br>"
             + "Capital: %{y:.2f}€<br>"
             + "ROI: %{customdata:.2f}%<extra></extra>",

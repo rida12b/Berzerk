@@ -11,26 +11,27 @@ Auteur: BERZERK Team
 Phase: 2.3 - Automatisation Complète
 """
 
-import json
 import sys
-from typing import Dict, List, Any, TypedDict
 from datetime import datetime
+from typing import Any, TypedDict
 
-# LangGraph Imports
-from langgraph.graph import StateGraph, END
 from langchain_core.output_parsers import JsonOutputParser
 
-# Imports depuis nos modules existants
-from berzerk_lab import get_article_text, analyze_news_with_llm
+# LangGraph Imports
+from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, Field
+
 from agents import (
-    route_to_agents,
-    run_agent_analysis,
-    run_ticker_hunter,
-    run_augmented_analysis,  # Garde pour flexibilité
-    run_pure_prediction_analysis,  # NOUVEAU : Agent de prédiction pure
     AGENT_PROFILES,
     llm,
+    route_to_agents,
+    run_agent_analysis,
+    run_pure_prediction_analysis,  # NOUVEAU : Agent de prédiction pure
+    run_ticker_hunter,
 )
+
+# Imports depuis nos modules existants
+from berzerk_lab import analyze_news_with_llm, get_article_text
 
 # --- DÉFINITION DE L'ÉTAT DU GRAPHE ---
 
@@ -41,19 +42,17 @@ class GraphState(TypedDict):
     news_link: str
     news_summary: str
     full_article_text: str
-    initial_analysis: Dict[str, Any]
-    actionable_tickers: List[Dict[str, str]]  # Nouveau : Résultat du Ticker Hunter
-    agent_team: List[Dict[str, str]]
+    initial_analysis: dict[str, Any]
+    actionable_tickers: list[dict[str, str]]  # Nouveau : Résultat du Ticker Hunter
+    agent_team: list[dict[str, str]]
     agent_debriefing: str
-    final_decision: Dict[str, Any]
+    final_decision: dict[str, Any]
     capital_disponible: float
-    execution_log: List[str]
+    execution_log: list[str]
     timestamp: str
 
 
 # --- MODÈLE PYDANTIC POUR LA DÉCISION FINALE ---
-
-from pydantic import BaseModel, Field
 
 
 class InvestmentDecision(BaseModel):
@@ -67,8 +66,8 @@ class InvestmentDecision(BaseModel):
     allocation_capital_pourcentage: float = Field(
         description="Pourcentage du capital à allouer (0.0 à 5.0)"
     )
-    points_cles_positifs: List[str] = Field(description="Points positifs clés")
-    points_cles_negatifs_risques: List[str] = Field(description="Risques identifiés")
+    points_cles_positifs: list[str] = Field(description="Points positifs clés")
+    points_cles_negatifs_risques: list[str] = Field(description="Risques identifiés")
 
 
 # --- FONCTIONS UTILITAIRES ---
@@ -82,7 +81,7 @@ def log_step(state: GraphState, message: str) -> None:
     print(f"🔄 {log_message}")
 
 
-def format_debriefing(agent_analyses: List[Dict[str, str]]) -> str:
+def format_debriefing(agent_analyses: list[dict[str, str]]) -> str:
     """Formate les analyses des agents pour le superviseur."""
     debriefing_parts = []
     for i, analysis in enumerate(agent_analyses, 1):
@@ -579,7 +578,7 @@ def create_workflow() -> StateGraph:
 
 def run_berzerk_pipeline(
     news_link: str, capital_disponible: float = 30000.0
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Exécute le pipeline complet d'analyse BERZERK.
 
@@ -639,13 +638,13 @@ def run_berzerk_pipeline(
 # --- FONCTION D'AFFICHAGE DES RÉSULTATS ---
 
 
-def display_final_results(final_state: Dict[str, Any]) -> None:
+def display_final_results(final_state: dict[str, Any]) -> None:
     """Affiche les résultats finaux de manière formatée."""
 
     # Affichage des tickers identifiés
     actionable_tickers = final_state.get("actionable_tickers", [])
     if actionable_tickers:
-        print(f"\n🎯 TICKERS IDENTIFIÉS PAR LE TICKER HUNTER:")
+        print("\n🎯 TICKERS IDENTIFIÉS PAR LE TICKER HUNTER:")
         for ticker_info in actionable_tickers:
             # Gestion des objets Pydantic ET des dictionnaires
             if hasattr(ticker_info, "ticker"):
@@ -659,11 +658,11 @@ def display_final_results(final_state: Dict[str, Any]) -> None:
             print(f"   🏢 {ticker} ({company})")
             print(f"      📝 {justification}")
     else:
-        print(f"\n⚠️ AUCUN TICKER ACTIONNABLE IDENTIFIÉ")
+        print("\n⚠️ AUCUN TICKER ACTIONNABLE IDENTIFIÉ")
 
     decision = final_state.get("final_decision", {})
 
-    print(f"\n📊 DÉCISION FINALE BERZERK:")
+    print("\n📊 DÉCISION FINALE BERZERK:")
     print(f"   🎯 Action: {decision.get('decision', 'N/A')}")
     print(f"   📈 Ticker: {decision.get('ticker', 'N/A')}")
     print(f"   🔒 Confiance: {decision.get('confiance', 'N/A')}")
@@ -672,17 +671,17 @@ def display_final_results(final_state: Dict[str, Any]) -> None:
 
     positifs = decision.get("points_cles_positifs", [])
     if positifs:
-        print(f"\n✅ Points Positifs:")
+        print("\n✅ Points Positifs:")
         for point in positifs:
             print(f"   • {point}")
 
     risques = decision.get("points_cles_negatifs_risques", [])
     if risques:
-        print(f"\n⚠️ Risques Identifiés:")
+        print("\n⚠️ Risques Identifiés:")
         for risque in risques:
             print(f"   • {risque}")
 
-    print(f"\n📋 Logs d'exécution:")
+    print("\n📋 Logs d'exécution:")
     for log in final_state.get("execution_log", []):
         print(f"   {log}")
 
@@ -693,11 +692,6 @@ def display_final_results(final_state: Dict[str, Any]) -> None:
 def test_pipeline():
     """Fonction de test avec des exemples d'articles."""
 
-    test_urls = [
-        "https://finance.yahoo.com/news/apple-stock-rises-ai-optimism-180000123.html",
-        "https://www.reuters.com/technology/artificial-intelligence/",
-        "https://finance.yahoo.com/rss/",  # Fallback sur le flux RSS
-    ]
 
     print("🧪 MODE TEST - Sélection automatique d'un article récent")
 

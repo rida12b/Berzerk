@@ -1,18 +1,17 @@
-import streamlit as st
-import feedparser
-from dotenv import load_dotenv
-import requests
-from bs4 import BeautifulSoup
-import json
-import os
-from datetime import datetime
 import sqlite3
+from datetime import datetime
+
+import feedparser
+import requests
+import streamlit as st
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_core.pydantic_v1 import BaseModel, Field
 
 # LangChain Imports
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.pydantic_v1 import BaseModel, Field
 
 # NOUVEAU : Import depuis notre module d'agents
 from agents import route_to_agents, run_agent_analysis

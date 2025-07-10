@@ -12,11 +12,10 @@ Usage:
     python start_realtime_monitor.py --interval 30      # Intervalle personnalisé
 """
 
+import os
 import subprocess
 import sys
 import time
-import threading
-import os
 from datetime import datetime
 
 

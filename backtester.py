@@ -16,13 +16,12 @@ Auteur : BERZERK System
 Date : 2024-01-XX
 """
 
-import sqlite3
-import pandas as pd
-import yfinance as yf
 import json
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+import sqlite3
 import sys
+from datetime import datetime, timedelta
+
+import yfinance as yf
 
 # Configuration
 HOLDING_PERIOD_DAYS = 7
@@ -38,7 +37,7 @@ class BerzerkBacktester:
         self.db_path = db_path
         self.results = []
 
-    def get_buy_decisions(self) -> List[Dict]:
+    def get_buy_decisions(self) -> list[dict]:
         """
         Récupère toutes les décisions d'ACHAT de la base de données
         """
@@ -50,9 +49,9 @@ class BerzerkBacktester:
         # Récupérer tous les articles avec décisions
         cursor.execute(
             """
-            SELECT id, title, link, published_date, decision_json 
-            FROM articles 
-            WHERE decision_json IS NOT NULL 
+            SELECT id, title, link, published_date, decision_json
+            FROM articles
+            WHERE decision_json IS NOT NULL
             AND status = "analyzed"
             ORDER BY published_date DESC
         """
@@ -129,7 +128,7 @@ class BerzerkBacktester:
 
         return next_day
 
-    def simulate_trade(self, trade: Dict) -> Optional[Dict]:
+    def simulate_trade(self, trade: dict) -> dict | None:
         """
         Simule un trade individuel avec la stratégie de détention de 7 jours
 
@@ -214,7 +213,7 @@ class BerzerkBacktester:
                     print(
                         f"   📈 Prix de vente (actuel): {sell_price:.2f} USD le {actual_sell_date.strftime('%Y-%m-%d')}"
                     )
-                except:
+                except Exception:
                     # Si pas d'info actuelle, utiliser le dernier prix historique
                     sell_price = hist.iloc[-1]["Close"]
                     actual_sell_date = hist.index[-1]
@@ -278,7 +277,7 @@ class BerzerkBacktester:
             print(f"❌ Erreur simulation {ticker}: {e}")
             return None
 
-    def run_backtest(self) -> Dict:
+    def run_backtest(self) -> dict:
         """
         Exécute le backtest complet et génère le rapport de performance
 
@@ -343,7 +342,7 @@ class BerzerkBacktester:
             "trades": successful_trades,
         }
 
-    def display_results(self, results: Dict):
+    def display_results(self, results: dict):
         """
         Affiche le rapport de performance formaté
 
@@ -371,7 +370,7 @@ class BerzerkBacktester:
         print(f"ROI total cumulé           : {results['total_roi']:+.2f}%")
 
         # Meilleurs et pires trades
-        print(f"\n🏆 MEILLEUR TRADE")
+        print("\n🏆 MEILLEUR TRADE")
         print("-" * 20)
         best = results["best_trade"]
         print(f"Ticker  : {best['ticker']}")
@@ -383,7 +382,7 @@ class BerzerkBacktester:
             f"Vente   : {best['sell_price']:.2f} USD le {best['sell_date'].strftime('%Y-%m-%d')}"
         )
 
-        print(f"\n📉 PIRE TRADE")
+        print("\n📉 PIRE TRADE")
         print("-" * 15)
         worst = results["worst_trade"]
         print(f"Ticker  : {worst['ticker']}")
@@ -396,7 +395,7 @@ class BerzerkBacktester:
         )
 
         # Détail de tous les trades
-        print(f"\n📋 DÉTAIL DE TOUS LES TRADES")
+        print("\n📋 DÉTAIL DE TOUS LES TRADES")
         print("-" * 40)
         for trade in results["trades"]:
             status = "✅" if trade["is_profitable"] else "❌"
@@ -407,7 +406,7 @@ class BerzerkBacktester:
             )
 
         # Conclusions
-        print(f"\n🎯 CONCLUSIONS")
+        print("\n🎯 CONCLUSIONS")
         print("-" * 15)
         if results["win_rate"] > 60:
             print(
@@ -434,11 +433,15 @@ def main():
     print("=" * 60)
 
     # Vérifier les prérequis
-    try:
-        import yfinance
-        import pandas
-    except ImportError as e:
-        print(f"❌ Erreur : Module manquant {e}")
+    import importlib.util
+
+    missing_modules = []
+    for module in ["pandas", "yfinance"]:
+        if importlib.util.find_spec(module) is None:
+            missing_modules.append(module)
+
+    if missing_modules:
+        print(f"❌ Erreur : Modules manquants {missing_modules}")
         print("💡 Installez les dépendances : pip install yfinance pandas")
         sys.exit(1)
 

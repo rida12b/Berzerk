@@ -24,24 +24,6 @@ extend-exclude = '''
 line-length = 88
 target-version = "py311"
 
-# Règles à activer
-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-]
-
-# Règles à ignorer
-ignore = [
-    "E501", # line too long, géré par Black
-    "B008", # do not perform function calls in argument defaults
-    "C901", # too complex
-]
-
 # Fichiers à exclure
 exclude = [
     ".bzr",
@@ -66,5 +48,24 @@ exclude = [
     "venv",
 ]
 
-[tool.ruff.mccabe]
+[tool.ruff.lint]
+# Règles à activer
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+# Règles à ignorer
+ignore = [
+    "E501", # line too long, géré par Black
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+]
+
+[tool.ruff.lint.mccabe]
 max-complexity = 10 

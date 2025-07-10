@@ -7,10 +7,10 @@ Ce script nettoie les anciennes analyses et relance les 20 dernières
 news avec les nouveaux agents augmentés (Phase 5).
 """
 
-import sqlite3
-import sys
 import json
+import sqlite3
 from datetime import datetime
+
 from orchestrator import run_berzerk_pipeline
 
 
@@ -26,10 +26,10 @@ def reset_analyses():
     # Remettre à zéro les analyses
     cursor.execute(
         """
-        UPDATE articles 
-        SET decision_json = NULL, 
-            status = "pending", 
-            analyzed_at = NULL 
+        UPDATE articles
+        SET decision_json = NULL,
+            status = "pending",
+            analyzed_at = NULL
         WHERE decision_json IS NOT NULL
     """
     )
@@ -60,10 +60,10 @@ def get_latest_articles(limit=20):
 
     cursor.execute(
         """
-        SELECT id, title, link, published_date 
-        FROM articles 
-        WHERE status = "pending" 
-        ORDER BY published_date DESC 
+        SELECT id, title, link, published_date
+        FROM articles
+        WHERE status = "pending"
+        ORDER BY published_date DESC
         LIMIT ?
     """,
         (limit,),
@@ -127,10 +127,10 @@ def save_decision_to_db(article_id: int, decision_result: dict) -> bool:
         # Sauvegarder dans la base de données
         cursor.execute(
             """
-            UPDATE articles 
-            SET decision_json = ?, 
-                status = "analyzed", 
-                analyzed_at = ? 
+            UPDATE articles
+            SET decision_json = ?,
+                status = "analyzed",
+                analyzed_at = ?
             WHERE id = ?
         """,
             (json.dumps(decision_data), datetime.now().isoformat(), article_id),
@@ -150,14 +150,14 @@ def analyze_articles(articles):
     """
     Lance l'analyse des articles avec les nouveaux agents augmentés
     """
-    print(f"🚀 Lancement des analyses avec les agents augmentés...")
+    print("🚀 Lancement des analyses avec les agents augmentés...")
     print("-" * 60)
 
     successful_analyses = 0
     failed_analyses = 0
     saved_decisions = 0
 
-    for i, (article_id, title, link, published_date) in enumerate(articles, 1):
+    for i, (article_id, title, link, _published_date) in enumerate(articles, 1):
         print(f"\n🔬 [{i}/{len(articles)}] Analyse: {title[:50]}...")
 
         try:
@@ -169,12 +169,12 @@ def analyze_articles(articles):
 
             if result and not result.get("error"):
                 successful_analyses += 1
-                print(f"✅ Analyse terminée avec succès")
+                print("✅ Analyse terminée avec succès")
 
                 # Sauvegarder la décision dans la base de données
                 if save_decision_to_db(article_id, result):
                     saved_decisions += 1
-                    print(f"💾 Décision sauvegardée dans la base de données")
+                    print("💾 Décision sauvegardée dans la base de données")
 
                     # Afficher la décision si disponible
                     if result.get("final_decision"):
@@ -195,7 +195,7 @@ def analyze_articles(articles):
             failed_analyses += 1
             print(f"❌ Erreur lors de l'analyse: {e}")
 
-    print(f"\n📊 RÉSULTATS DES ANALYSES")
+    print("\n📊 RÉSULTATS DES ANALYSES")
     print("-" * 30)
     print(f"✅ Analyses réussies: {successful_analyses}")
     print(f"💾 Décisions sauvegardées: {saved_decisions}")
@@ -229,9 +229,9 @@ def main():
     # Étape 3: Analyser les articles
     successful = analyze_articles(articles)
 
-    print(f"\n🏁 TERMINÉ !")
+    print("\n🏁 TERMINÉ !")
     print(f"📊 {successful} nouvelles analyses avec agents augmentés")
-    print(f"💡 Vous pouvez maintenant relancer: python backtester.py")
+    print("💡 Vous pouvez maintenant relancer: python backtester.py")
 
 
 if __name__ == "__main__":

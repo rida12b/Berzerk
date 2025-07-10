@@ -5,8 +5,8 @@
 Script simple pour analyser les décisions stockées
 """
 
-import sqlite3
 import json
+import sqlite3
 
 
 def diagnostic_db():
@@ -50,7 +50,7 @@ def diagnostic_db():
 
                 if action and action.upper() == "ACHETER":
                     achat_count += 1
-                    print(f"   ✅ DÉCISION D'ACHAT TROUVÉE!")
+                    print("   ✅ DÉCISION D'ACHAT TROUVÉE!")
 
             else:
                 print(f"   ⚠️  Format inattendu: {type(decision)}")

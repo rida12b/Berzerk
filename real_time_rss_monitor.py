@@ -20,23 +20,21 @@ Usage: python real_time_rss_monitor.py [poll_interval_seconds]
 Arrêt: Ctrl+C
 """
 
-import asyncio
+import hashlib
+import json
+import sqlite3
+import sys
 import threading
 import time
-import requests
-import feedparser
-import hashlib
-import sqlite3
-import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass
+from datetime import datetime
 from email.utils import parsedate_to_datetime
-import sys
-import traceback
+
+import feedparser
+import requests
 
 # Import des modules BERZERK
-from berzerk_lab import RSS_FEEDS, init_db, get_article_text, analyze_news_with_llm
+from berzerk_lab import RSS_FEEDS, init_db
 from orchestrator import run_berzerk_pipeline
 
 
@@ -45,10 +43,10 @@ class FeedState:
     """État d'un flux RSS avec optimisations HTTP"""
 
     url: str
-    last_modified: Optional[str] = None
-    etag: Optional[str] = None
-    last_check: Optional[datetime] = None
-    last_content_hash: Optional[str] = None
+    last_modified: str | None = None
+    etag: str | None = None
+    last_check: datetime | None = None
+    last_content_hash: str | None = None
     consecutive_errors: int = 0
     # articles_cache supprimé - causait des doublons après redémarrage
 
@@ -73,9 +71,9 @@ class RealTimeRSSMonitor:
     def __init__(self, poll_interval: int = 30, capital: float = 25000.0):
         self.poll_interval = poll_interval  # En secondes
         self.capital = capital
-        self.feeds_state: Dict[str, FeedState] = {}
+        self.feeds_state: dict[str, FeedState] = {}
         self.running = False
-        self.processed_articles: Set[str] = set()
+        self.processed_articles: set[str] = set()
         self.stats = {
             "total_checks": 0,
             "new_articles_found": 0,
@@ -99,19 +97,19 @@ class RealTimeRSSMonitor:
         self.init_feeds_state()
         self.load_processed_articles()
 
-        print(f"🚀 BERZERK Real-Time RSS Monitor initialisé")
+        print("🚀 BERZERK Real-Time RSS Monitor initialisé")
         print(f"   ⚡ Polling: {poll_interval} secondes (haute fréquence)")
         print(f"   📈 Flux RSS: {len(RSS_FEEDS)} source (Bloomberg uniquement)")
         for feed_name, feed_url in RSS_FEEDS.items():
             print(f"   📡 {feed_name}: {feed_url}")
         print(f"   💰 Capital: {capital:,.2f}€")
-        print(f"   🔄 Optimisations: ETags, Last-Modified, Threading")
+        print("   🔄 Optimisations: ETags, Last-Modified, Threading")
         print(f"   📊 Articles déjà traités: {len(self.processed_articles)}")
         print("-" * 70)
 
     def init_feeds_state(self):
         """Initialise l'état de chaque flux RSS"""
-        for feed_name, feed_url in RSS_FEEDS.items():
+        for _feed_name, feed_url in RSS_FEEDS.items():
             self.feeds_state[feed_url] = FeedState(url=feed_url)
 
     def load_processed_articles(self):
@@ -146,7 +144,7 @@ class RealTimeRSSMonitor:
         """Calcule un hash du contenu pour détecter les changements"""
         return hashlib.md5(content.encode("utf-8")).hexdigest()
 
-    def check_feed_optimized(self, feed_state: FeedState) -> List[Dict]:
+    def check_feed_optimized(self, feed_state: FeedState) -> list[dict]:
         """Vérifie un flux RSS avec optimisations HTTP"""
         try:
             headers = {}
@@ -210,7 +208,7 @@ class RealTimeRSSMonitor:
                     elif hasattr(entry, "published"):
                         try:
                             published_date = parsedate_to_datetime(entry.published)
-                        except:
+                        except Exception:
                             published_date = datetime.now()
                     else:
                         published_date = datetime.now()
@@ -244,7 +242,7 @@ class RealTimeRSSMonitor:
             self.log(f"❌ Erreur sur {feed_state.url[:50]}: {e}")
             return []
 
-    def store_article(self, article: Dict):
+    def store_article(self, article: dict):
         """Stocke un article dans la base de données"""
         try:
             conn = sqlite3.connect("berzerk.db")
@@ -252,7 +250,7 @@ class RealTimeRSSMonitor:
 
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO articles 
+                INSERT OR IGNORE INTO articles
                 (title, link, published_date, source, status, published_str)
                 VALUES (?, ?, ?, ?, 'pending', ?)
             """,
@@ -276,7 +274,7 @@ class RealTimeRSSMonitor:
         except Exception as e:
             self.log(f"❌ Erreur stockage: {e}")
 
-    def analyze_article_realtime(self, article: Dict) -> Optional[Dict]:
+    def analyze_article_realtime(self, article: dict) -> dict | None:
         """Analyse un article en temps réel avec le pipeline BERZERK"""
         try:
             self.log(f"🤖 Analyse TEMPS RÉEL: {article['title'][:50]}...")
@@ -319,7 +317,7 @@ class RealTimeRSSMonitor:
             self.log(f"❌ Erreur analyse temps réel: {e}")
             return None
 
-    def save_decision_to_db(self, article_link: str, decision: Dict):
+    def save_decision_to_db(self, article_link: str, decision: dict):
         """Sauvegarde la décision dans la base de données"""
         try:
             conn = sqlite3.connect("berzerk.db")
@@ -327,9 +325,9 @@ class RealTimeRSSMonitor:
 
             cursor.execute(
                 """
-                UPDATE articles 
-                SET decision_json = ?, 
-                    status = 'analyzed', 
+                UPDATE articles
+                SET decision_json = ?,
+                    status = 'analyzed',
                     analyzed_at = ?
                 WHERE link = ?
             """,
@@ -353,7 +351,7 @@ class RealTimeRSSMonitor:
         while self.running:
             try:
                 # Vérifier chaque flux RSS
-                for feed_url, feed_state in self.feeds_state.items():
+                for _feed_url, feed_state in self.feeds_state.items():
                     if not self.running:
                         break
 
@@ -446,8 +444,8 @@ def main():
             print("📊 Exemple: python real_time_rss_monitor.py 30")
             sys.exit(1)
 
-    print(f"🚀 BERZERK Real-Time RSS Monitor")
-    print(f"⚡ Surveillance quasi-instantanée avec polling optimisé")
+    print("🚀 BERZERK Real-Time RSS Monitor")
+    print("⚡ Surveillance quasi-instantanée avec polling optimisé")
     print(f"🔄 Intervalle: {poll_interval} secondes")
     print("-" * 70)
 

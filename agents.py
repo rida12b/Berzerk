@@ -10,21 +10,19 @@ Auteur: BERZERK Team
 Phase: 2 - Agents IA Spécialisés
 """
 
-import os
-from typing import List, Dict, Any, Optional
+import yfinance as yf
 from dotenv import load_dotenv
-
-# LangChain Imports
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain_core.tools import tool
-from pydantic import BaseModel, Field
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 
 # Imports pour les outils
 from langchain_community.tools.tavily_search import TavilySearchResults
-import yfinance as yf
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.tools import tool
+
+# LangChain Imports
+from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field
 
 # --- CONFIGURATION & SETUP ---
 load_dotenv()
@@ -97,7 +95,7 @@ def get_market_sentiment(ticker: str) -> str:
         volume = info.get("averageVolume", "N/A")
 
         # Formatage des grandes valeurs
-        if isinstance(market_cap, (int, float)):
+        if isinstance(market_cap, int | float):
             if market_cap > 1e12:
                 market_cap_str = f"{market_cap/1e12:.1f}T USD"
             elif market_cap > 1e9:
@@ -125,7 +123,7 @@ print("✅ Outils financiers (yfinance) initialisés")
 class AgentSelection(BaseModel):
     """Modèle pour la sélection d'agents par le routeur."""
 
-    agents: List[Dict[str, str]] = Field(
+    agents: list[dict[str, str]] = Field(
         description="Liste des agents sélectionnés avec leur type et focus"
     )
 
@@ -143,7 +141,7 @@ class TickerIdentification(BaseModel):
 class TickerHunterResult(BaseModel):
     """Modèle pour la sortie complète de l'agent Ticker Hunter."""
 
-    tickers_identifies: List[TickerIdentification] = Field(
+    tickers_identifies: list[TickerIdentification] = Field(
         description="Liste des tickers identifiés avec leurs justifications"
     )
 
@@ -361,7 +359,7 @@ AGENT_PROFILES = {
 # --- FONCTIONS PRINCIPALES ---
 
 
-def route_to_agents(entities: List[str], news_summary: str) -> List[Dict[str, str]]:
+def route_to_agents(entities: list[str], news_summary: str) -> list[dict[str, str]]:
     """
     Routeur intelligent qui sélectionne les agents appropriés selon les entités détectées.
 
@@ -529,7 +527,7 @@ def run_agent_analysis(
 
 def run_ticker_hunter(
     news_summary: str, full_article_text: str
-) -> Dict[str, List[Dict]]:
+) -> dict[str, list[dict]]:
     """
     Exécute l'agent Ticker Hunter pour identifier les tickers actionnables.
 
@@ -674,19 +672,19 @@ def run_augmented_analysis(
         # Préparation de la requête
         query = f"""
         Analyse l'impact de cette news sur l'action {ticker}.
-        
+
         **Résumé de la news :**
         {news_summary}
-        
+
         **Texte complet :**
         {full_article_text[:2000]}...  # Limitation pour éviter les tokens excessifs
-        
+
         **Ta mission :**
         1. Vérifie le prix actuel et la variation de {ticker}
         2. Recherche des informations complémentaires si nécessaire
         3. Évalue si le marché a déjà intégré cette news
         4. Produis une recommandation d'investissement précise
-        
+
         Utilise tes outils pour avoir une vision complète du contexte actuel !
         """
 
@@ -787,19 +785,19 @@ def run_pure_prediction_analysis(
         # Préparation de la requête orientée prédiction
         query = f"""
         Analyse l'impact prédictif de cette news sur l'action {ticker}.
-        
+
         **Résumé de la news :**
         {news_summary}
-        
+
         **Texte complet :**
         {full_article_text[:2000]}...
-        
+
         **Ta mission PURE PREDICTION :**
         1. Évalue la magnitude de cette information sur le business futur.
         2. Détermine le sentiment prédictif (très positif, positif, neutre, négatif, très négatif).
         3. Produis une recommandation d'action immédiate (Acheter, Vendre, Surveiller) et une justification basée sur ta prédiction.
         4. Si nécessaire, recherche des informations contextuelles qualitatives (technologie, secteur, concurrence).
-        
+
         INTERDIT : Aucune donnée de prix, volume ou réaction de marché. Ta décision doit être instantanée et visionnaire.
         """
 
@@ -815,7 +813,7 @@ def run_pure_prediction_analysis(
 # --- FONCTIONS UTILITAIRES ---
 
 
-def get_available_agents() -> List[str]:
+def get_available_agents() -> list[str]:
     """Retourne la liste des agents disponibles."""
     return list(AGENT_PROFILES.keys())
 
