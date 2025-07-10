@@ -411,7 +411,6 @@ def display_decision_card(decision: dict[str, Any]):
                     / decision["prix_decision"]
                 ) * 100
 
-
             with perf_cols[0]:
                 st.metric("Prix à la décision", f"{decision['prix_decision']:.2f} $")
             with perf_cols[1]:

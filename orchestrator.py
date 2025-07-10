@@ -692,7 +692,6 @@ def display_final_results(final_state: dict[str, Any]) -> None:
 def test_pipeline():
     """Fonction de test avec des exemples d'articles."""
 
-
     print("🧪 MODE TEST - Sélection automatique d'un article récent")
 
     # Pour le test, on peut utiliser un URL simple ou une simulation
