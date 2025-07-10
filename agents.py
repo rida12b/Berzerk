@@ -32,10 +32,10 @@ load_dotenv()
 # Initialisation du LLM avec température plus élevée pour la personnalité des agents
 try:
     llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash-lite-preview-06-17", 
-    temperature=0.3
-    # Le paramètre convert_system_message_to_human est maintenant géré automatiquement
-)
+        model="gemini-2.5-flash-lite-preview-06-17",
+        temperature=0.3,
+        # Le paramètre convert_system_message_to_human est maintenant géré automatiquement
+    )
     print("✅ LLM initialisé avec succès pour les agents IA")
 except Exception as e:
     print(f"❌ Erreur d'initialisation du LLM pour les agents: {e}")
@@ -47,12 +47,13 @@ except Exception as e:
 try:
     web_search_tool = TavilySearchResults(
         max_results=3,  # Limiter pour éviter la surcharge d'informations
-        search_depth="basic"  # Recherche basique pour être plus rapide
+        search_depth="basic",  # Recherche basique pour être plus rapide
     )
     print("✅ Outil de recherche web (Tavily) initialisé")
 except Exception as e:
     print(f"❌ Erreur d'initialisation de Tavily: {e}")
     web_search_tool = None
+
 
 # 2. Outil de données financières avec yfinance
 @tool
@@ -63,22 +64,25 @@ def get_stock_price(ticker: str) -> str:
         hist = stock.history(period="2d")  # 2 jours pour calculer la variation
         if hist.empty:
             return f"❌ Données non trouvées pour {ticker}"
-        
+
         # Prix actuel (dernière clôture)
-        current_price = hist['Close'].iloc[-1]
-        
+        current_price = hist["Close"].iloc[-1]
+
         # Variation par rapport à la veille
         if len(hist) >= 2:
-            previous_price = hist['Close'].iloc[-2]
+            previous_price = hist["Close"].iloc[-2]
             change_percent = ((current_price - previous_price) / previous_price) * 100
-            change_symbol = "📈" if change_percent > 0 else "📉" if change_percent < 0 else "➡️"
-            
+            change_symbol = (
+                "📈" if change_percent > 0 else "📉" if change_percent < 0 else "➡️"
+            )
+
             return f"💰 {ticker}: {current_price:.2f} USD {change_symbol} {change_percent:+.2f}% vs hier"
         else:
             return f"💰 {ticker}: {current_price:.2f} USD (variation non disponible)"
-            
+
     except Exception as e:
         return f"❌ Erreur lors de la récupération des données pour {ticker}: {str(e)}"
+
 
 @tool
 def get_market_sentiment(ticker: str) -> str:
@@ -86,12 +90,12 @@ def get_market_sentiment(ticker: str) -> str:
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
-        
+
         # Informations clés
-        market_cap = info.get('marketCap', 'N/A')
-        pe_ratio = info.get('trailingPE', 'N/A')
-        volume = info.get('averageVolume', 'N/A')
-        
+        market_cap = info.get("marketCap", "N/A")
+        pe_ratio = info.get("trailingPE", "N/A")
+        volume = info.get("averageVolume", "N/A")
+
         # Formatage des grandes valeurs
         if isinstance(market_cap, (int, float)):
             if market_cap > 1e12:
@@ -102,33 +106,47 @@ def get_market_sentiment(ticker: str) -> str:
                 market_cap_str = f"{market_cap/1e6:.1f}M USD"
         else:
             market_cap_str = "N/A"
-            
-        return f"📊 {ticker} - Cap: {market_cap_str} | P/E: {pe_ratio} | Volume moy: {volume:,}" if isinstance(volume, int) else f"📊 {ticker} - Cap: {market_cap_str} | P/E: {pe_ratio} | Volume moy: {volume}"
-        
+
+        return (
+            f"📊 {ticker} - Cap: {market_cap_str} | P/E: {pe_ratio} | Volume moy: {volume:,}"
+            if isinstance(volume, int)
+            else f"📊 {ticker} - Cap: {market_cap_str} | P/E: {pe_ratio} | Volume moy: {volume}"
+        )
+
     except Exception as e:
         return f"❌ Erreur sentiment marché pour {ticker}: {str(e)}"
+
 
 print("✅ Outils financiers (yfinance) initialisés")
 
 # --- MODÈLES PYDANTIC POUR LA VALIDATION ---
 
+
 class AgentSelection(BaseModel):
     """Modèle pour la sélection d'agents par le routeur."""
+
     agents: List[Dict[str, str]] = Field(
         description="Liste des agents sélectionnés avec leur type et focus"
     )
 
+
 class TickerIdentification(BaseModel):
     """Modèle pour la sortie de l'agent Ticker Hunter."""
+
     ticker: str = Field(description="Symbole boursier de l'entreprise")
     nom_entreprise: str = Field(description="Nom complet de l'entreprise")
-    justification_impact: str = Field(description="Justification de l'impact sur cette entreprise")
+    justification_impact: str = Field(
+        description="Justification de l'impact sur cette entreprise"
+    )
+
 
 class TickerHunterResult(BaseModel):
     """Modèle pour la sortie complète de l'agent Ticker Hunter."""
+
     tickers_identifies: List[TickerIdentification] = Field(
         description="Liste des tickers identifiés avec leurs justifications"
     )
+
 
 # --- PROFILS D'AGENTS SPÉCIALISÉS ---
 
@@ -176,7 +194,7 @@ Réponds IMPÉRATIVEMENT au format JSON suivant, et rien d'autre. Si aucune acti
 - Justification factuelle basée sur le contenu de l'article
 - Maximum 5 tickers pour rester focus
 - Si aucun ticker n'est clairement identifiable, retourne une liste vide
-"""
+""",
 )
 
 # Analyste Actions - Spécialisé dans l'analyse d'actions individuelles
@@ -212,7 +230,7 @@ Produis une analyse concise au format Markdown avec les sections suivantes :
 - **Horizon :** (Court Terme, Moyen Terme, Long Terme)
 - **Action :** (Surveiller, Renforcer la position, Alléger la position, Ne rien faire)
 - **Niveau de confiance :** (Faible, Moyen, Élevé)
-"""
+""",
 )
 
 # Analyste Sectoriel - Spécialisé dans l'analyse de secteurs d'activité
@@ -249,7 +267,7 @@ Produis une analyse sectorielle au format Markdown avec les sections suivantes :
 - **Opportunités d'investissement :** (Nouvelles opportunités créées)
 - **Risques sectoriels :** (Nouveaux risques à surveiller)
 - **Horizon temporel :** (Court/Moyen/Long terme pour les impacts)
-"""
+""",
 )
 
 # Stratégiste Géopolitique - Spécialisé dans l'analyse géopolitique et macroéconomique
@@ -292,7 +310,7 @@ Produis une analyse géopolitique au format Markdown avec les sections suivantes
 - **Positionnement recommandé :** (Défensif, Offensif, Neutre)
 - **Horizon d'impact :** (Court/Moyen/Long terme)
 - **Indicateurs à surveiller :** (Signaux d'alerte ou d'opportunité)
-"""
+""",
 )
 
 # Agent Investisseur Final - Le superviseur qui prend la décision finale
@@ -328,7 +346,7 @@ Le format JSON doit contenir les clés suivantes :
 - "allocation_capital_pourcentage": Le pourcentage du capital disponible à allouer à ce trade (nombre flottant, de 0.0 à 5.0). Allouer 0 si la décision n'est pas "ACHETER". Une allocation typique pour une confiance MOYENNE est 1%, ÉLEVÉE est 2-3%.
 - "points_cles_positifs": Une liste de 2-3 points clés positifs tirés du rapport.
 - "points_cles_negatifs_risques": Une liste de 2-3 risques ou points négatifs tirés du rapport.
-"""
+""",
 )
 
 # Dictionnaire des profils d'agents
@@ -342,21 +360,22 @@ AGENT_PROFILES = {
 
 # --- FONCTIONS PRINCIPALES ---
 
+
 def route_to_agents(entities: List[str], news_summary: str) -> List[Dict[str, str]]:
     """
     Routeur intelligent qui sélectionne les agents appropriés selon les entités détectées.
-    
+
     Args:
         entities: Liste des entités détectées (tickers, secteurs, concepts)
         news_summary: Résumé de la news
-    
+
     Returns:
         Liste de dictionnaires avec agent_type et focus pour chaque agent sélectionné
     """
     if not llm:
         print("❌ LLM non disponible pour le routage")
         return []
-    
+
     # Prompt pour le routeur intelligent
     router_template = PromptTemplate(
         input_variables=["entities", "news_summary", "available_agents"],
@@ -393,9 +412,9 @@ la meilleure équipe d'agents IA pour analyser une news financière.
 }}
 
 Assure-toi que chaque focus soit spécifique et pertinent pour l'agent sélectionné.
-"""
+""",
     )
-    
+
     try:
         # Préparation des données
         available_agents = """
@@ -403,170 +422,199 @@ Assure-toi que chaque focus soit spécifique et pertinent pour l'agent sélectio
 - analyste_sectoriel : Analyse de secteurs d'activité et industries
 - strategiste_geopolitique : Analyse géopolitique et macroéconomique
 """
-        
+
         # Configuration du parser JSON
         parser = JsonOutputParser(pydantic_object=AgentSelection)
-        
+
         # Création de la chaîne LangChain
         chain = router_template | llm | parser
-        
+
         # Exécution du routage
-        result = chain.invoke({
-            "entities": ", ".join(entities),
-            "news_summary": news_summary,
-            "available_agents": available_agents
-        })
-        
+        result = chain.invoke(
+            {
+                "entities": ", ".join(entities),
+                "news_summary": news_summary,
+                "available_agents": available_agents,
+            }
+        )
+
         selected_agents = result.get("agents", [])
         print(f"✅ Routeur : {len(selected_agents)} agent(s) sélectionné(s)")
-        
+
         return selected_agents
-        
+
     except Exception as e:
         print(f"❌ Erreur dans le routage des agents: {e}")
         # Fallback : sélection basique basée sur les entités
         fallback_agents = []
-        
+
         # Recherche de tickers (généralement en majuscules, 2-5 caractères)
-        tickers = [entity for entity in entities if entity.isupper() and 2 <= len(entity) <= 5]
+        tickers = [
+            entity for entity in entities if entity.isupper() and 2 <= len(entity) <= 5
+        ]
         if tickers:
-            fallback_agents.append({"agent_type": "analyste_actions", "focus": tickers[0]})
-        
+            fallback_agents.append(
+                {"agent_type": "analyste_actions", "focus": tickers[0]}
+            )
+
         # Recherche de secteurs (mots-clés courants)
-        secteurs = ["tech", "technologie", "énergie", "finance", "santé", "pharma", "automobile"]
+        secteurs = [
+            "tech",
+            "technologie",
+            "énergie",
+            "finance",
+            "santé",
+            "pharma",
+            "automobile",
+        ]
         for entity in entities:
             if any(secteur in entity.lower() for secteur in secteurs):
-                fallback_agents.append({"agent_type": "analyste_sectoriel", "focus": entity})
+                fallback_agents.append(
+                    {"agent_type": "analyste_sectoriel", "focus": entity}
+                )
                 break
-        
+
         return fallback_agents
 
+
 def run_agent_analysis(
-    agent_type: str, 
-    focus: str, 
-    news_summary: str, 
-    full_article_text: str
+    agent_type: str, focus: str, news_summary: str, full_article_text: str
 ) -> str:
     """
     Exécute l'analyse d'un agent spécifique.
-    
+
     Args:
         agent_type: Type d'agent (clé du dictionnaire AGENT_PROFILES)
         focus: Focus spécifique pour l'analyse
         news_summary: Résumé de la news
         full_article_text: Texte complet de l'article
-    
+
     Returns:
         Analyse formatée en Markdown ou message d'erreur
     """
     if not llm:
         return "❌ **Erreur :** LLM non disponible pour l'analyse"
-    
+
     if agent_type not in AGENT_PROFILES:
         return f"❌ **Erreur :** Agent '{agent_type}' non reconnu"
-    
+
     try:
         # Récupération du template de l'agent
         agent_prompt = AGENT_PROFILES[agent_type]
-        
+
         # Création de la chaîne LangChain
         chain = agent_prompt | llm
-        
+
         # Exécution de l'analyse
-        analysis_result = chain.invoke({
-            "focus": focus,
-            "news_summary": news_summary,
-            "full_article_text": full_article_text
-        })
-        
+        analysis_result = chain.invoke(
+            {
+                "focus": focus,
+                "news_summary": news_summary,
+                "full_article_text": full_article_text,
+            }
+        )
+
         print(f"✅ Analyse terminée - Agent: {agent_type}, Focus: {focus}")
-        return analysis_result.content if hasattr(analysis_result, 'content') else str(analysis_result)
-        
+        return (
+            analysis_result.content
+            if hasattr(analysis_result, "content")
+            else str(analysis_result)
+        )
+
     except Exception as e:
         error_msg = f"❌ **Erreur lors de l'analyse** - Agent: {agent_type}, Focus: {focus}\n**Détail:** {str(e)}"
         print(error_msg)
         return error_msg
 
-def run_ticker_hunter(news_summary: str, full_article_text: str) -> Dict[str, List[Dict]]:
+
+def run_ticker_hunter(
+    news_summary: str, full_article_text: str
+) -> Dict[str, List[Dict]]:
     """
     Exécute l'agent Ticker Hunter pour identifier les tickers actionnables.
-    
+
     Args:
         news_summary: Résumé de la news
         full_article_text: Texte complet de l'article
-    
+
     Returns:
         Dictionnaire avec la liste des tickers identifiés
     """
     if not llm:
         print("❌ LLM non disponible pour le Ticker Hunter")
         return {"tickers_identifies": []}
-    
+
     try:
         # Configuration du parser JSON avec validation Pydantic
         parser = JsonOutputParser(pydantic_object=TickerHunterResult)
-        
+
         # Récupération du template du Ticker Hunter
         ticker_hunter_prompt = AGENT_PROFILES["ticker_hunter"]
-        
+
         # Création de la chaîne LangChain
         chain = ticker_hunter_prompt | llm | parser
-        
+
         # Exécution de l'analyse
-        result = chain.invoke({
-            "news_summary": news_summary,
-            "full_article_text": full_article_text
-        })
-        
+        result = chain.invoke(
+            {"news_summary": news_summary, "full_article_text": full_article_text}
+        )
+
         tickers_found = result.get("tickers_identifies", [])
         print(f"✅ Ticker Hunter : {len(tickers_found)} ticker(s) identifié(s)")
-        
+
         if tickers_found:
             for ticker_info in tickers_found:
                 # Gestion des objets Pydantic ET des dictionnaires
-                if hasattr(ticker_info, 'ticker'):
+                if hasattr(ticker_info, "ticker"):
                     ticker = ticker_info.ticker
                     company = ticker_info.nom_entreprise
                 else:
-                    ticker = ticker_info.get('ticker', 'N/A')
-                    company = ticker_info.get('nom_entreprise', 'N/A')
+                    ticker = ticker_info.get("ticker", "N/A")
+                    company = ticker_info.get("nom_entreprise", "N/A")
                 print(f"   🎯 {ticker} - {company}")
-        
+
         return result
-        
+
     except Exception as e:
         print(f"❌ Erreur dans le Ticker Hunter: {e}")
         return {"tickers_identifies": []}
 
+
 # --- AGENTS AUGMENTÉS (AVEC OUTILS) ---
+
 
 def create_augmented_analyst(focus_ticker: str = None) -> AgentExecutor:
     """
     Crée un agent analyste augmenté avec accès à des outils web et financiers.
-    
+
     Args:
         focus_ticker: Ticker à analyser en priorité (optionnel)
-    
+
     Returns:
         AgentExecutor configuré avec les outils
     """
     if not llm:
         raise ValueError("LLM non disponible pour créer l'agent augmenté")
-    
+
     # Définition des outils disponibles
     tools = []
-    
+
     # Ajout des outils disponibles
     if web_search_tool:
         tools.append(web_search_tool)
-    
+
     tools.extend([get_stock_price, get_market_sentiment])
-    
+
     # Prompt système pour l'agent augmenté
-    focus_instruction = f" Tu te concentres principalement sur {focus_ticker}." if focus_ticker else ""
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""Tu es un analyste financier expert du fonds BERZERK avec accès à des outils temps réel.{focus_instruction}
+    focus_instruction = (
+        f" Tu te concentres principalement sur {focus_ticker}." if focus_ticker else ""
+    )
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"""Tu es un analyste financier expert du fonds BERZERK avec accès à des outils temps réel.{focus_instruction}
 
 **Tes outils disponibles :**
 - web_search_tool : Recherche d'informations complémentaires sur le web
@@ -583,42 +631,46 @@ def create_augmented_analyst(focus_ticker: str = None) -> AgentExecutor:
 - Utilise tes outils de manière stratégique (pas systématiquement)
 - Mentionne si le marché a déjà réagi à la news
 - Contextualise tes recommandations avec les données temps réel
-- Sois précis et actionnable dans tes conclusions"""),
-        
-        ("user", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ])
-    
+- Sois précis et actionnable dans tes conclusions""",
+            ),
+            ("user", "{input}"),
+            ("placeholder", "{agent_scratchpad}"),
+        ]
+    )
+
     # Création de l'agent
     agent = create_tool_calling_agent(llm, tools, prompt)
-    
+
     # Création de l'exécuteur
     agent_executor = AgentExecutor(
         agent=agent,
         tools=tools,
         verbose=True,  # Pour voir le processus de réflexion
         max_iterations=5,  # Limiter les itérations pour éviter les boucles
-        early_stopping_method="generate"  # Arrêt anticipé si nécessaire
+        early_stopping_method="generate",  # Arrêt anticipé si nécessaire
     )
-    
+
     return agent_executor
 
-def run_augmented_analysis(ticker: str, news_summary: str, full_article_text: str) -> str:
+
+def run_augmented_analysis(
+    ticker: str, news_summary: str, full_article_text: str
+) -> str:
     """
     Exécute une analyse augmentée avec accès aux outils externes.
-    
+
     Args:
         ticker: Ticker à analyser
         news_summary: Résumé de la news
         full_article_text: Texte complet de l'article
-    
+
     Returns:
         Analyse complète avec données temps réel
     """
     try:
         # Création de l'agent augmenté pour ce ticker
         agent_executor = create_augmented_analyst(focus_ticker=ticker)
-        
+
         # Préparation de la requête
         query = f"""
         Analyse l'impact de cette news sur l'action {ticker}.
@@ -637,25 +689,27 @@ def run_augmented_analysis(ticker: str, news_summary: str, full_article_text: st
         
         Utilise tes outils pour avoir une vision complète du contexte actuel !
         """
-        
+
         # Exécution de l'analyse
         result = agent_executor.invoke({"input": query})
-        
+
         return result.get("output", "Erreur dans l'analyse augmentée")
-        
+
     except Exception as e:
         return f"❌ **Erreur dans l'analyse augmentée :** {str(e)}"
 
+
 # --- AGENTS PURE PREDICTION (MODE BERZERK TAC AU TAC) ---
+
 
 def create_pure_prediction_analyst(focus_ticker: str = None) -> AgentExecutor:
     """
     Crée un agent analyste "pur" qui se base UNIQUEMENT sur l'analyse textuelle
     et le contexte web, sans accès aux données de prix en temps réel.
-    
+
     Args:
         focus_ticker: Ticker à analyser en priorité (optionnel)
-    
+
     Returns:
         AgentExecutor configuré sans outils financiers
     """
@@ -666,12 +720,17 @@ def create_pure_prediction_analyst(focus_ticker: str = None) -> AgentExecutor:
     tools = []
     if web_search_tool:
         tools.append(web_search_tool)
-    
-    focus_instruction = f" Tu te concentres principalement sur {focus_ticker}." if focus_ticker else ""
-    
+
+    focus_instruction = (
+        f" Tu te concentres principalement sur {focus_ticker}." if focus_ticker else ""
+    )
+
     # Un prompt entièrement réorienté vers la prédiction
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""Tu es un analyste financier visionnaire pour le fonds BERZERK. Ta mission est de prédire l'impact FUTUR d'une news, SANS te soucier de la réaction passée du marché. Tu agis "tac au tac".{focus_instruction}
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"""Tu es un analyste financier visionnaire pour le fonds BERZERK. Ta mission est de prédire l'impact FUTUR d'une news, SANS te soucier de la réaction passée du marché. Tu agis "tac au tac".{focus_instruction}
 
 **Ton seul outil disponible :**
 - web_search_tool : Pour obtenir plus de contexte QUALITATIF sur la news (produits, concurrents, technologie).
@@ -685,42 +744,46 @@ def create_pure_prediction_analyst(focus_ticker: str = None) -> AgentExecutor:
 - IGNORE TOTALEMENT si le marché a déjà réagi ou non.
 - Ta décision doit être une PURE PRÉDICTION basée sur le potentiel de la news.
 - Sois décisif et direct. Le but est d'agir avant tout le monde.
-- Base tes recommandations sur l'impact business fondamental prédit."""),
-        
-        ("user", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ])
-    
+- Base tes recommandations sur l'impact business fondamental prédit.""",
+            ),
+            ("user", "{input}"),
+            ("placeholder", "{agent_scratchpad}"),
+        ]
+    )
+
     # Création de l'agent
     agent = create_tool_calling_agent(llm, tools, prompt)
-    
+
     # Création de l'exécuteur
     agent_executor = AgentExecutor(
         agent=agent,
         tools=tools,
         verbose=True,  # Pour voir le processus de réflexion
         max_iterations=4,  # Moins d'itérations pour être plus rapide
-        early_stopping_method="generate"  # Arrêt anticipé si nécessaire
+        early_stopping_method="generate",  # Arrêt anticipé si nécessaire
     )
-    
+
     return agent_executor
 
-def run_pure_prediction_analysis(ticker: str, news_summary: str, full_article_text: str) -> str:
+
+def run_pure_prediction_analysis(
+    ticker: str, news_summary: str, full_article_text: str
+) -> str:
     """
     Exécute une analyse de prédiction pure sans données de marché historiques.
-    
+
     Args:
         ticker: Ticker à analyser
         news_summary: Résumé de la news
         full_article_text: Texte complet de l'article
-    
+
     Returns:
         Analyse de prédiction pure
     """
     try:
         # Création de l'agent de prédiction pure pour ce ticker
         agent_executor = create_pure_prediction_analyst(focus_ticker=ticker)
-        
+
         # Préparation de la requête orientée prédiction
         query = f"""
         Analyse l'impact prédictif de cette news sur l'action {ticker}.
@@ -739,51 +802,57 @@ def run_pure_prediction_analysis(ticker: str, news_summary: str, full_article_te
         
         INTERDIT : Aucune donnée de prix, volume ou réaction de marché. Ta décision doit être instantanée et visionnaire.
         """
-        
+
         # Exécution de l'analyse
         result = agent_executor.invoke({"input": query})
-        
+
         return result.get("output", "Erreur dans l'analyse de prédiction pure.")
-        
+
     except Exception as e:
         return f"❌ **Erreur dans l'analyse de prédiction pure :** {str(e)}"
 
+
 # --- FONCTIONS UTILITAIRES ---
+
 
 def get_available_agents() -> List[str]:
     """Retourne la liste des agents disponibles."""
     return list(AGENT_PROFILES.keys())
+
 
 def get_agent_description(agent_type: str) -> str:
     """Retourne une description d'un agent spécifique."""
     descriptions = {
         "analyste_actions": "Spécialisé dans l'analyse d'actions individuelles et de tickers spécifiques",
         "analyste_sectoriel": "Expert en analyse de secteurs d'activité et dynamiques industrielles",
-        "strategiste_geopolitique": "Spécialisé dans l'analyse géopolitique et macroéconomique"
+        "strategiste_geopolitique": "Spécialisé dans l'analyse géopolitique et macroéconomique",
     }
     return descriptions.get(agent_type, "Agent non reconnu")
 
+
 # --- FONCTION DE TEST ---
+
 
 def test_agents_module():
     """Fonction de test pour vérifier le bon fonctionnement du module."""
     print("🧪 Test du module agents.py")
     print("-" * 50)
-    
+
     # Test 1: Vérification des profils
     print(f"✅ {len(AGENT_PROFILES)} profils d'agents chargés")
     for agent_type in AGENT_PROFILES.keys():
         print(f"   - {agent_type}: {get_agent_description(agent_type)}")
-    
+
     # Test 2: Test du routeur
     test_entities = ["AAPL", "TSLA", "Technologie", "Intelligence Artificielle"]
     test_summary = "Apple et Tesla annoncent un partenariat dans l'IA automobile"
-    
+
     print(f"\n🔀 Test du routeur avec entités: {test_entities}")
     selected_agents = route_to_agents(test_entities, test_summary)
     print(f"✅ Agents sélectionnés: {selected_agents}")
-    
+
     print("\n🎯 Module agents.py prêt à l'emploi !")
 
+
 if __name__ == "__main__":
-    test_agents_module() 
+    test_agents_module()
