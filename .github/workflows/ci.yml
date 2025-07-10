@@ -1,4 +1,4 @@
-name: BERZERK - Test, Lint & Format
+name: BERZERK - CI & CD Pipeline
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
+  # --- JOB 1: Validation du code ---
   validate-code:
     runs-on: ubuntu-latest
     strategy:
@@ -30,12 +31,10 @@ jobs:
         pip install pytest pytest-mock black ruff
 
     - name: 4. Création du fichier .env pour la CI
-      # IMPORTANT: Ces variables doivent être configurées dans le repo GitHub
-      # Settings > Secrets and variables > Actions > Variables (PAS Secrets)
       run: |
         echo "GOOGLE_API_KEY=${{ vars.GOOGLE_API_KEY }}" >> .env
         echo "TAVILY_API_KEY=${{ vars.TAVILY_API_KEY }}" >> .env
-        echo "CI_ENV=true" >> .env # Variable pour indiquer qu'on est en CI
+        echo "CI_ENV=true" >> .env
 
     - name: 5. Vérification du formatage avec Black
       run: black --check .
@@ -44,4 +43,37 @@ jobs:
       run: ruff check .
 
     - name: 7. Exécution des tests avec Pytest
-      run: pytest 
+      run: pytest
+
+  # --- JOB 2: Déploiement (uniquement si la validation réussit) ---
+  deploy-to-prod:
+    # 'needs' garantit que ce job ne se lance que si 'validate-code' a réussi
+    needs: validate-code
+    runs-on: ubuntu-latest
+    
+    # 'if' garantit que ce job ne se lance que pour un push sur main,
+    # et pas pour une pull request.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Déploiement sur le serveur de production via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        script: |
+          cd /home/berzerk/app 
+          echo ">>> Mise à jour du code depuis Git..."
+          git pull origin main
+          echo ">>> Activation de l'environnement virtuel..."
+          source venv/bin/activate
+          echo ">>> Installation des dépendances..."
+          pip install -r requirements.txt
+          echo ">>> Redémarrage du service de monitoring..."
+          sudo systemctl restart berzerk-monitor
+          echo ">>> Déploiement terminé avec succès !"
