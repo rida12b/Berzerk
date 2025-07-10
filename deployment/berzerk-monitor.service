@@ -1,0 +1,29 @@
+[Unit]
+Description=BERZERK Real-Time RSS Monitor Service
+After=network.target
+
+[Service]
+# Utilisateur qui exécutera le service
+User=berzerk 
+# Groupe qui exécutera le service
+Group=berzerk 
+
+# Répertoire de travail de l'application
+WorkingDirectory=/home/berzerk/app 
+
+# Commande pour démarrer le service
+# Utilise le python de l'environnement virtuel
+ExecStart=/home/berzerk/app/venv/bin/python real_time_rss_monitor.py
+
+# Politique de redémarrage : toujours redémarrer en cas de crash
+Restart=always 
+# Délai avant de redémarrer
+RestartSec=10 
+
+# Configuration des logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=berzerk-monitor
+
+[Install]
+WantedBy=multi-user.target 

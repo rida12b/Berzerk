@@ -1,0 +1,51 @@
+name: BERZERK - Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    # Ce job ne s'exécutera que si le workflow de CI a réussi
+    needs: validate-code
+    runs-on: ubuntu-latest
+    
+    # S'assure que le déclencheur est bien un push, et non une pull request
+    if: github.event_name == 'push'
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Déploiement sur le serveur de production via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        script: |
+          # Commandes à exécuter sur le serveur distant
+          # Naviguer vers le répertoire de l'application
+          cd /home/berzerk/app 
+
+          # Mettre à jour le code depuis la branche main
+          echo ">>> Mise à jour du code depuis Git..."
+          git pull origin main
+
+          # Activer l'environnement virtuel
+          echo ">>> Activation de l'environnement virtuel..."
+          source venv/bin/activate
+          
+          # Mettre à jour les dépendances Python
+          echo ">>> Installation des dépendances..."
+          pip install -r requirements.txt
+          
+          # Redémarrer le service de monitoring pour appliquer les changements
+          echo ">>> Redémarrage du service de monitoring..."
+          sudo systemctl restart berzerk-monitor
+          
+          # Optionnel : Redémarrer le service du dashboard s'il tourne aussi sur le serveur
+          # sudo systemctl restart berzerk-dashboard
+
+          echo ">>> Déploiement terminé avec succès !" 

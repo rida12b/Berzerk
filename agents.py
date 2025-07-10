@@ -170,6 +170,8 @@ Réponds IMPÉRATIVEMENT au format JSON suivant, et rien d'autre. Si aucune acti
 
 **RÈGLES CRITIQUES :**
 - Seules les entreprises publiques avec des tickers boursiers réels (NYSE, NASDAQ, etc.)
+- Un ticker est une courte chaîne de 1 à 5 lettres majuscules (ex: GOOGL, MSFT), parfois avec un suffixe de marché (ex: .HK, .PA).
+- Le ticker ne doit JAMAIS contenir de '$', d'espaces ou être une phrase.
 - Impact direct et mesurable sur le business
 - Justification factuelle basée sur le contenu de l'article
 - Maximum 5 tickers pour rester focus
@@ -321,6 +323,7 @@ Le format JSON doit contenir les clés suivantes :
 - "decision": "ACHETER", "VENDRE", "SURVEILLER" ou "IGNORER".
 - "ticker": Le ticker de l'action concernée (string, ou null si IGNORER).
 - "confiance": "ÉLEVÉE", "MOYENNE", "FAIBLE" (string).
+- "horizon": "Court Terme", "Moyen Terme", ou "Long Terme". DÉDUIS-LE du rapport.
 - "justification_synthetique": Une phrase unique et directe expliquant la décision.
 - "allocation_capital_pourcentage": Le pourcentage du capital disponible à allouer à ce trade (nombre flottant, de 0.0 à 5.0). Allouer 0 si la décision n'est pas "ACHETER". Une allocation typique pour une confiance MOYENNE est 1%, ÉLEVÉE est 2-3%.
 - "points_cles_positifs": Une liste de 2-3 points clés positifs tirés du rapport.

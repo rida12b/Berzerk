@@ -48,13 +48,149 @@
 - [x] Gestion d'erreurs adaptative
 - [x] **CORRECTION CRITIQUE** : Logique de détection des nouveaux articles simplifiée
 
-### Phase 6 : Améliorations Avancées (à venir)
+### Phase 6 : Intégration et Déploiement Continus (CI/CD) ✅
+- [x] Structure de tests et configuration pytest
+- [x] Workflow GitHub Actions pour CI (tests, linting, formatage)
+- [x] Tests unitaires avec mocks pour validation automatique
+- [x] Workflow GitHub Actions pour CD (déploiement automatisé)
+- [x] Scripts de déploiement sur serveur de production
+- [x] Configuration service systemd pour monitoring continu
+
+### Phase 7 : Améliorations Avancées (à venir)
 - [ ] Filtrage avancé des articles
 - [ ] Visualisations des tendances
 - [ ] Export des résultats
 - [ ] API REST pour intégrations externes
 
 ## 📝 Journal des Modifications
+
+### 2024-12-29 - Implémentation CI/CD : Intégration et Déploiement Continus ✅
+**Objectif :** Automatiser les tests, la validation et le déploiement pour garantir la qualité et la rapidité des mises à jour.
+
+**Philosophie DevOps :**
+- **Continuous Integration (CI)** : Chaque push déclenche automatiquement des vérifications de qualité et tests
+- **Continuous Deployment (CD)** : Déploiement automatique en production après validation CI réussie
+
+**Composants implémentés :**
+1. ✅ **Préparation de l'environnement** :
+   - Ajout des dépendances de développement (pytest, black, ruff, pytest-mock)
+   - Création de la structure de tests (`tests/unit/`, `tests/integration/`)
+   - Configuration pytest.ini pour standardiser les tests
+
+2. ✅ **Intégration Continue (.github/workflows/ci.yml)** :
+   - Workflow déclenché sur push/PR vers main
+   - Validation formatage avec Black (--check)
+   - Linting avec Ruff pour la qualité du code
+   - Exécution des tests avec Pytest
+   - Support multi-version Python (matrice avec Python 3.11)
+
+3. ✅ **Tests Unitaires** :
+   - Premier test pour `route_to_agents()` avec mocks LLM
+   - Évite les coûts API durant les tests (simulation avec pytest-mock)
+   - Structure extensible pour futurs tests
+
+4. ✅ **Déploiement Continu (.github/workflows/deploy.yml)** :
+   - Workflow déclenché uniquement après succès de la CI
+   - Déploiement SSH automatisé sur serveur de production
+   - Mise à jour Git, dépendances et redémarrage services
+   - Gestion des secrets GitHub pour authentification
+
+**Variables et Secrets requis :**
+- **Variables GitHub** : `GOOGLE_API_KEY`, `TAVILY_API_KEY` (pour CI)
+- **Secrets GitHub** : `PROD_HOST`, `PROD_USERNAME`, `PROD_SSH_KEY` (pour CD)
+
+**Résultats :**
+- **Qualité garantie** : Aucun code non testé ou mal formaté ne peut atteindre main
+- **Déploiement automatisé** : Push → Tests → Déploiement en production
+- **Zéro downtime** : Redémarrage intelligent des services
+- **Évolutivité** : Structure prête pour tests d'intégration et monitoring avancé
+
+### 2024-12-29 - Correction Critique : Logique de Prix et Robustesse yfinance ✅
+**Objectif :** Résoudre les problèmes de prix identiques et d'erreurs yfinance sur tickers mal formatés.
+
+**Diagnostics identifiés :**
+- **Problème Logique** : Le "prix à la décision" et le "prix actuel" étaient identiques car `get_price_at_decision_time()` récupérait simplement le dernier prix disponible (prix actuel)
+- **Problème de Données** : L'IA générait parfois des tickers invalides (avec "$", espaces) causant des erreurs yfinance 404/delisted
+- **Problème d'Affichage** : La performance s'affichait même avec des prix non fiables (0.00 ou identiques)
+
+**Corrections implémentées :**
+1. ✅ **Refonte logique de `get_price_at_decision_time()` - Version Optimisée** :
+   - **Performance** : Utilise uniquement les données journalières (ultra-rapide, 1 seul appel réseau par ticker)
+   - **Logique intelligente** : Prix de clôture du jour de décision OU du jour précédent si marché fermé
+   - **Résout le blocage** : Évite les appels lents `interval="1m"` qui bloquaient `load_decisions_from_db()`
+   - Cache optimisé (24h) car prix historique ne change pas
+   - Nettoyage automatique des tickers (suppression des "$" et espaces)
+
+2. ✅ **Amélioration robustesse `get_current_price()`** :
+   - Nettoyage automatique des tickers avant requête yfinance
+   - Priorité aux données intraday (interval="1m") pour prix plus récent
+   - Fallback robuste sur `regularMarketPrice`
+   - Gestion silencieuse des erreurs sans crash
+
+3. ✅ **Renforcement `get_sparkline_chart()`** :
+   - Même logique de nettoyage des tickers pour cohérence
+   - Gestion d'erreurs améliorée
+
+4. ✅ **Affichage conditionnel de la performance** :
+   - Section "Suivi de la Position" visible UNIQUEMENT si `prix_decision > 0` ET `prix_actuel > 0`
+   - Remplacement du container HTML par `st.metric()` standard pour alignement
+   - Évite l'affichage de performances incorrectes (-100%) ou de 0.00
+
+5. ✅ **Renforcement du Ticker Hunter (agents.py)** :
+   - Règles explicites dans le prompt : tickers = 1-5 lettres majuscules
+   - Interdiction formelle des "$", espaces ou phrases
+   - Réduction anticipée des tickers mal formatés à la source
+
+**Résultats attendus :**
+- **Chargement ultra-rapide** du dashboard (résolution du blocage sur load_decisions_from_db)
+- Prix de décision pertinent = clôture du jour de décision ou jour précédent si marché fermé
+- Affichage **instantané** de la section performance (prix quasi-systématiquement disponible)
+- Réduction drastique des erreurs yfinance pour tickers invalides
+- IA générant des tickers de meilleure qualité
+
+**Tests à effectuer :**
+- Vérifier chargement ultra-rapide du dashboard (plus de blocage)
+- Contrôler prix_decision cohérent (clôture jour de décision ou jour précédent)
+- Vérifier affichage instantané de la section "Suivi de la Position"
+- Tester avec tickers contenant "$" (doivent être nettoyés automatiquement)
+
+### 2024-12-07 - Transformation "Carte de Signal 2.0" ✅
+**Objectif :** Transformer les cartes de décision en interface professionnelle dense et intuitive avec informations contextuelles enrichies.
+
+**Diagnostics identifiés :**
+- Graphiques plats par manque de données et contexte visuel
+- Horizon d'investissement souvent "N/A" ou non fourni par l'IA
+- Absence de contexte métier (secteur d'activité)
+- Densité d'information sous-optimale
+
+**Améliorations implémentées :**
+1. ✅ **Amélioration du Cerveau IA** :
+   - Modification du prompt `investisseur_final_template` pour exiger l'horizon d'investissement
+   - Ajout du champ `horizon` au modèle Pydantic `InvestmentDecision`
+   - Obligation pour l'IA de déduire l'horizon depuis le rapport d'analyse
+
+2. ✅ **Graphiques Dynamiques avec Tendance** :
+   - Refonte `get_sparkline_chart()` avec couleurs selon tendance (vert=haussier, rouge=baissier)
+   - Passage d'intervalle 1h → 1d pour plus de robustesse
+   - Retour de tuple `(fig, trend)` pour affichage de la tendance
+
+3. ✅ **Enrichissement Contextuel** :
+   - Récupération automatique du secteur d'activité via `yfinance`
+   - Intégration dans la carte de décision avec 3 KPI : Force du Signal, Horizon, Secteur
+   - Clé unique pour graphiques Plotly (`key=f"sparkline_{ticker}"`)
+
+4. ✅ **Refonte Interface Compacte** :
+   - Design en-tête intégré avec 3 colonnes : Badge Action, Info/News, Graphique
+   - Suppression de la section "Tableau de Bord du Signal" séparée
+   - Fusion informations essentielles en une ligne d'impact ultra-dense
+   - Graphique sparkline directement dans l'en-tête avec indication de tendance
+
+**Résultats :**
+- Interface professionnelle lisible en 3 secondes
+- Contexte métier immédiat (secteur)
+- Tendance marché visuelle (couleurs dynamiques)
+- Horizon d'investissement systématiquement présent
+- Information dense mais organisée
 
 ### 2024-01-XX - Implémentation Base de Données ✅
 **Objectif :** Ajouter une base de données SQLite pour éviter les doublons et améliorer la gestion des articles.

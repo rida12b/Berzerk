@@ -1,0 +1,47 @@
+name: BERZERK - Test, Lint & Format
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-code:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Mise en place de Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: 3. Installation des dépendances
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-mock black ruff
+
+    - name: 4. Création du fichier .env pour la CI
+      # IMPORTANT: Ces variables doivent être configurées dans le repo GitHub
+      # Settings > Secrets and variables > Actions > Variables (PAS Secrets)
+      run: |
+        echo "GOOGLE_API_KEY=${{ vars.GOOGLE_API_KEY }}" >> .env
+        echo "TAVILY_API_KEY=${{ vars.TAVILY_API_KEY }}" >> .env
+        echo "CI_ENV=true" >> .env # Variable pour indiquer qu'on est en CI
+
+    - name: 5. Vérification du formatage avec Black
+      run: black --check .
+
+    - name: 6. Linting avec Ruff
+      run: ruff check .
+
+    - name: 7. Exécution des tests avec Pytest
+      run: pytest 

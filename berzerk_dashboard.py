@@ -1,868 +1,497 @@
 #!/usr/bin/env python3
 """
-🎯 BERZERK COMMAND CENTER - Dashboard Professionnel
-===================================================
+⚡ BERZERK - Decision Feed
+========================
 
-Interface Streamlit avancée pour visualiser et analyser les performances
-du système BERZERK avec tableaux de bord interactifs et analytics.
+Interface épurée "Clarté Radicale" pour le suivi des décisions d'investissement IA.
+Philosophie : Priorité à l'action, simplicité, hiérarchie claire.
 
-Fonctionnalités:
-- 📈 Live Feed: Analyses en temps réel avec cartes interactives
-- 🏆 Performance & Backtest: Métriques de performance et backtesting
-- 📊 Graphiques interactifs avec Plotly
-- 🎨 Interface moderne avec couleurs et icônes
-- ⚡ Cache optimisé pour performances
-
-Usage: streamlit run berzerk_dashboard.py
+Auteur: BERZERK Team
+Phase: 8.1 - Ajout du suivi de performance instantané
 """
 
 import streamlit as st
 import sqlite3
 import json
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import hashlib
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import List, Dict, Any
 import yfinance as yf
-import time
+import plotly.graph_objects as go
 
-# Configuration de la page simplifiée
+# Configuration de la page
 st.set_page_config(
-    page_title="BERZERK - Centre de Contrôle",
+    page_title="BERZERK Decision Feed",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# En-tête principal SIMPLE et CLAIR
-st.markdown("""
-<div class="main-header">
-    <h1 style="color: white; font-size: 2.5rem; margin: 0; font-weight: 700;">
-        ⚡ BERZERK Command Center
-    </h1>
-    <p style="color: rgba(255,255,255,0.9); font-size: 1.2rem; margin: 0.5rem 0 0 0;">
-        Intelligence Artificielle • Analyse d'Actualités Financières • Décisions d'Investissement
-    </p>
-</div>
-""", unsafe_allow_html=True)
+# --- NOUVELLES FONCTIONS DE PERFORMANCE ---
 
-# Styles CSS ULTRA SIMPLES - Fond blanc, texte lisible
-st.markdown("""
-<style>
-    /* Fond général blanc */
-    .main {
-        background-color: #ffffff !important;
-        color: #333333 !important;
-    }
-    
-    /* Supprimer le fond sombre de Streamlit */
-    .stApp {
-        background-color: #ffffff !important;
-    }
-    
-    /* En-tête avec couleurs douces */
-    .main-header {
-        background: linear-gradient(135deg, #4285f4, #34a853);
-        padding: 2rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-        text-align: center;
-        color: white !important;
-    }
-    
-    /* Cartes avec bordures colorées et fond blanc */
-    .metric-card {
-        background: #ffffff !important;
-        border: 2px solid #e8f0fe;
-        border-left: 5px solid #4285f4;
-        border-radius: 10px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        color: #333333 !important;
-    }
-    
-    .metric-card h3 {
-        color: #1a73e8 !important;
-        font-size: 1.1rem !important;
-        margin-bottom: 0.5rem !important;
-    }
-    
-    /* Cartes d'articles avec fond blanc */
-    .article-card {
-        background: #ffffff !important;
-        border: 1px solid #dadce0;
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        color: #333333 !important;
-    }
-    
-    /* Titre d'article en noir */
-    .article-title {
-        color: #202124 !important;
-        font-size: 1.2rem !important;
-        font-weight: 600 !important;
-        margin-bottom: 0.8rem !important;
-        line-height: 1.4 !important;
-    }
-    
-    /* Méta infos en gris */
-    .article-meta {
-        color: #5f6368 !important;
-        font-size: 0.9rem !important;
-        margin-bottom: 1rem !important;
-    }
-    
-    /* Badges d'action plus simples */
-    .badge-acheter {
-        background: #34a853 !important;
-        color: white !important;
-        padding: 0.7rem 1.5rem !important;
-        border-radius: 6px !important;
-        font-weight: bold !important;
-        font-size: 1rem !important;
-        display: inline-block !important;
-        margin-bottom: 1rem !important;
-    }
-    
-    .badge-surveiller {
-        background: #fbbc04 !important;
-        color: #333333 !important;
-        padding: 0.7rem 1.5rem !important;
-        border-radius: 6px !important;
-        font-weight: bold !important;
-        font-size: 1rem !important;
-        display: inline-block !important;
-        margin-bottom: 1rem !important;
-    }
-    
-    .badge-vendre {
-        background: #ea4335 !important;
-        color: white !important;
-        padding: 0.7rem 1.5rem !important;
-        border-radius: 6px !important;
-        font-weight: bold !important;
-        font-size: 1rem !important;
-        display: inline-block !important;
-        margin-bottom: 1rem !important;
-    }
-    
-    .badge-ignorer {
-        background: #9aa0a6 !important;
-        color: white !important;
-        padding: 0.7rem 1.5rem !important;
-        border-radius: 6px !important;
-        font-weight: bold !important;
-        font-size: 1rem !important;
-        display: inline-block !important;
-        margin-bottom: 1rem !important;
-    }
-    
-    /* Métriques en ligne plus visibles */
-    .inline-metric {
-        background: #f8f9fa !important;
-        border: 1px solid #e0e0e0 !important;
-        padding: 0.8rem !important;
-        border-radius: 6px !important;
-        margin: 0.3rem !important;
-        color: #333333 !important;
-        font-size: 0.9rem !important;
-    }
-    
-    .inline-metric strong {
-        color: #1a73e8 !important;
-    }
-    
-    /* Section headers plus clairs */
-    .section-header {
-        background: #f8f9fa !important;
-        border: 1px solid #e0e0e0 !important;
-        border-left: 4px solid #4285f4 !important;
-        padding: 1rem 1.5rem !important;
-        border-radius: 6px !important;
-        margin: 1.5rem 0 1rem 0 !important;
-        color: #333333 !important;
-    }
-    
-    .section-header h3 {
-        color: #1a73e8 !important;
-        margin: 0 !important;
-    }
-    
-    /* Améliorer les selectbox */
-    .stSelectbox > div > div {
-        background-color: #ffffff !important;
-        border: 2px solid #dadce0 !important;
-        border-radius: 6px !important;
-        color: #333333 !important;
-    }
-    
-    /* Forcer le texte en noir partout */
-    .stMarkdown, .stText, p, span, div {
-        color: #333333 !important;
-    }
-    
-    /* Onglets plus visibles */
-    .stTabs [data-baseweb="tab-list"] {
-        background-color: #f8f9fa !important;
-        border-radius: 6px !important;
-        padding: 0.5rem !important;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent !important;
-        color: #5f6368 !important;
-        font-weight: 500 !important;
-    }
-    
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #ffffff !important;
-        color: #1a73e8 !important;
-        font-weight: 600 !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+@st.cache_data(ttl=86400) # Cache de 1 jour, car ce prix historique ne changera pas.
+def get_price_at_decision_time(ticker: str, decision_time_str: str) -> float:
+    """
+    Récupère le prix de clôture du jour de la décision (ou du jour précédent si marché fermé).
+    Cette méthode est extrêmement rapide car elle n'utilise que des données journalières.
+    """
+    ticker = ticker.strip().replace('$', '')
+    if not ticker: return 0.0
 
-# =============================================================================
-# FONCTIONS DE CACHE ET DONNÉES
-# =============================================================================
+    try:
+        decision_dt = datetime.fromisoformat(decision_time_str.replace('Z', '+00:00'))
+        decision_date = decision_dt.date()
+        
+        stock = yf.Ticker(ticker)
+        
+        # On télécharge une petite plage de données journalières autour de la date de décision. C'est très rapide.
+        hist = stock.history(start=decision_date - timedelta(days=7), end=decision_date + timedelta(days=1))
 
-@st.cache_data(ttl=30)  # Cache pendant 30 secondes pour live feed
-def get_articles_with_decisions():
-    """Récupère tous les articles avec leurs décisions"""
-    conn = sqlite3.connect('berzerk.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT * FROM articles 
-        ORDER BY published_date DESC
-    """)
-    
-    articles = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return articles
+        if hist.empty:
+            return 0.0
 
-@st.cache_data(ttl=30)
-def get_dashboard_stats():
-    """Récupère les statistiques pour le tableau de bord - VERSION SIMPLIFIÉE"""
+        # On cherche les données pour le jour exact de la décision
+        day_data = hist[hist.index.date == decision_date]
+
+        # CAS 1: Le marché était ouvert ce jour-là. On prend le prix de clôture.
+        if not day_data.empty:
+            return float(day_data['Close'].iloc[0])
+
+        # CAS 2: Le marché était fermé (weekend/jour férié). On prend la clôture du jour d'avant.
+        else:
+            previous_days_data = hist[hist.index.date < decision_date]
+            if not previous_days_data.empty:
+                return float(previous_days_data['Close'].iloc[-1])
+
+        return 0.0
+    except Exception:
+        return 0.0
+
+@st.cache_data(ttl=60) # Cache 1 minute pour les prix actuels
+def get_current_price(ticker: str) -> float:
+    """Récupère le prix actuel d'une action via yfinance (version robuste)."""
+    ticker = ticker.strip().replace('$', '') # Nettoyage du ticker
+    if not ticker: return 0.0
+
+    try:
+        stock = yf.Ticker(ticker)
+        data = stock.history(period="1d", interval="1m") # On prend la dernière minute pour le prix le plus récent
+        if not data.empty:
+            return float(data['Close'].iloc[-1])
+
+        # Fallback si les données intraday ne sont pas dispo
+        price = stock.info.get('regularMarketPrice')
+        if price:
+            return float(price)
+            
+        return 0.0
+    except Exception:
+        # Gestion silencieuse des erreurs
+        return 0.0
+
+# --- FONCTIONS EXISTANTES (MODIFIÉES ET CONSERVÉES) ---
+
+def display_confidence_signal(confidence: str):
+    """Affiche un indicateur visuel de force du signal."""
+    confidence_map = {
+        "ÉLEVÉE": 3,
+        "MOYENNE": 2,
+        "FAIBLE": 1
+    }
+    level = confidence_map.get(confidence.upper(), 0)
+    
+    bars = "".join([
+        f'<div class="signal-bar {"filled" if i < level else ""}"></div>'
+        for i in range(3)
+    ])
+    
+    st.markdown(f"""
+        <div class="signal-container">
+            <div class="signal-bars">{bars}</div>
+            <span class="signal-text">{confidence.capitalize()}</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+@st.cache_data(ttl=900) # Cache de 15 minutes pour les graphiques
+def get_sparkline_chart(ticker: str):
+    """Génère un mini-graphique (sparkline) avec couleur de tendance."""
+    ticker = ticker.strip().replace('$', '') # Nettoyage du ticker
+    if not ticker: return None, "N/A"
+    
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="7d", interval="1d")
+        
+        if len(hist) < 2:
+            return None, "N/A"
+
+        start_price = hist['Close'].iloc[0]
+        end_price = hist['Close'].iloc[-1]
+        
+        color = "#28a745" if end_price > start_price else "#dc3545"
+        fill_color = "rgba(40, 167, 69, 0.1)" if end_price > start_price else "rgba(220, 53, 69, 0.1)"
+        trend = "Haussier" if end_price > start_price else "Baissier"
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=hist.index, 
+            y=hist['Close'], 
+            mode='lines', 
+            line=dict(color=color, width=2.5), 
+            fill='tozeroy', 
+            fillcolor=fill_color
+        ))
+        fig.update_layout(
+            height=50, 
+            margin=dict(l=0, r=0, t=5, b=0), 
+            xaxis=dict(visible=False), 
+            yaxis=dict(visible=False), 
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)', 
+            showlegend=False
+        )
+        return fig, trend
+    except Exception as e:
+        # Gestion silencieuse des erreurs
+        return None, "N/A"
+
+@st.cache_data(ttl=60) # Cache de 60 secondes
+def load_decisions_from_db() -> List[Dict[str, Any]]:
+    """Charge les décisions depuis la DB et les enrichit avec les données de performance."""
     try:
         conn = sqlite3.connect('berzerk.db')
         cursor = conn.cursor()
         
-        # Métriques principales
-        cursor.execute("SELECT COUNT(*) FROM articles")
-        total_articles = cursor.fetchone()[0]
+        cursor.execute('''
+            SELECT title, link, published_date, decision_json, analyzed_at
+            FROM articles 
+            WHERE decision_json IS NOT NULL AND status = 'analyzed'
+            AND analyzed_at >= datetime('now', '-30 days')
+            ORDER BY analyzed_at DESC
+        ''')
         
-        cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'analyzed'")
-        analyzed_articles = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'pending'")
-        pending_articles = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM articles WHERE status = 'error'")
-        error_count = cursor.fetchone()[0]
-        
-        # Décisions d'achat (recherche dans decision_json)
-        cursor.execute("""
-            SELECT COUNT(*) FROM articles 
-            WHERE status = 'analyzed' 
-            AND (decision_json LIKE '%"action": "ACHETER"%' OR decision_json LIKE '%"decision": "ACHETER"%')
-        """)
-        buy_decisions = cursor.fetchone()[0]
-        
-        # Dernière analyse
-        cursor.execute("""
-            SELECT analyzed_at FROM articles 
-            WHERE status = 'analyzed' AND analyzed_at IS NOT NULL 
-            ORDER BY analyzed_at DESC LIMIT 1
-        """)
-        last_analysis = cursor.fetchone()
-        
-        # Calculer les minutes depuis la dernière analyse
-        last_analysis_minutes = 999
-        if last_analysis and last_analysis[0]:
-            try:
-                last_time = datetime.fromisoformat(last_analysis[0])
-                time_diff = datetime.now() - last_time
-                last_analysis_minutes = int(time_diff.total_seconds() // 60)
-            except:
-                last_analysis_minutes = 999
-        
+        rows = cursor.fetchall()
         conn.close()
         
-        return {
-            'total_articles': total_articles,
-            'analyzed_articles': analyzed_articles,
-            'pending_articles': pending_articles,
-            'error_count': error_count,
-            'buy_decisions': buy_decisions,
-            'last_analysis_minutes': last_analysis_minutes
-        }
-        
-    except Exception as e:
-        st.error(f"Erreur lors de la récupération des statistiques: {e}")
-        return {
-            'total_articles': 0,
-            'analyzed_articles': 0,
-            'pending_articles': 0,
-            'error_count': 0,
-            'buy_decisions': 0,
-            'last_analysis_minutes': 999
-        }
-
-@st.cache_data(ttl=300)  # Cache pendant 5 minutes
-def get_backtest_data():
-    """Récupère et traite les données de backtest"""
-    conn = sqlite3.connect('berzerk.db')
-    cursor = conn.cursor()
-    
-    # Récupérer les décisions d'achat
-    cursor.execute('''
-        SELECT id, title, published_date, decision_json 
-        FROM articles 
-        WHERE decision_json IS NOT NULL 
-        AND status = "analyzed"
-        ORDER BY published_date DESC
-    ''')
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
-    buy_decisions = []
-    
-    for row in rows:
-        article_id, title, published_date, decision_json = row
-        
-        try:
-            decision = json.loads(decision_json)
-            action = decision.get('action', decision.get('decision', '')).upper()
-            
-            if action in ['ACHETER', 'ACHAT', 'BUY']:
-                ticker = decision.get('ticker')
+        decisions = []
+        for title, link, published_date, decision_json, analyzed_at in rows:
+            try:
+                decision_data = json.loads(decision_json)
+                action = decision_data.get('action', decision_data.get('decision', 'INCONNUE')).upper()
+                ticker = decision_data.get('ticker', None)
                 
-                if ticker:
-                    buy_decisions.append({
-                        'article_id': article_id,
-                        'title': title,
-                        'ticker': ticker,
-                        'decision_date': datetime.fromisoformat(published_date),
-                        'action': action,
-                        'justification': decision.get('justification', 'Aucune justification'),
-                        'allocation': decision.get('allocation_pourcentage', decision.get('allocation_percent', 0.0)),
-                        'confiance': decision.get('confiance', decision.get('confidence', 'INCONNUE'))
-                    })
-        except:
-            continue
-    
-    return buy_decisions
+                if action == 'INCONNUE' or not ticker: 
+                    continue
+                
+                # Créer un identifiant unique basé sur analyzed_at pour éviter les clés dupliquées
+                unique_id = hashlib.md5(f"{analyzed_at}_{link}".encode()).hexdigest()[:8]
+                
+                # --- ENRICHISSEMENT AVEC DONNÉES DE PERFORMANCE ---
+                prix_decision = get_price_at_decision_time(ticker, analyzed_at)
+                prix_actuel = get_current_price(ticker)
 
-def simulate_trade_performance(ticker: str, decision_date: datetime, holding_days: int = 7) -> Optional[Dict]:
-    """Simule la performance d'un trade"""
-    try:
-        # Calculer les dates
-        buy_date = decision_date + timedelta(days=1)
-        sell_date = buy_date + timedelta(days=holding_days)
-        
-        # Télécharger les données
-        stock = yf.Ticker(ticker)
-        start_date = buy_date - timedelta(days=10)
-        end_date = datetime.now() + timedelta(days=2)
-        
-        hist = stock.history(start=start_date, end=end_date)
-        
-        if hist.empty:
-            return None
-        
-        # Trouver les prix
-        buy_price = None
-        sell_price = None
-        
-        # Prix d'achat
-        for date, row in hist.iterrows():
-            if date.date() >= buy_date.date():
-                buy_price = row['Open']
-                break
-        
-        if buy_price is None:
-            buy_price = hist.iloc[-1]['Close']
-        
-        # Prix de vente
-        if datetime.now().date() < sell_date.date():
-            sell_price = hist.iloc[-1]['Close']
-        else:
-            for date, row in hist.iterrows():
-                if date.date() >= sell_date.date():
-                    sell_price = row['Open']
-                    break
-            
-            if sell_price is None:
-                sell_price = hist.iloc[-1]['Close']
-        
-        # Calculer la performance
-        roi_percent = ((sell_price - buy_price) / buy_price) * 100
-        
-        return {
-            'ticker': ticker,
-            'buy_price': round(buy_price, 2),
-            'sell_price': round(sell_price, 2),
-            'roi_percent': round(roi_percent, 2),
-            'is_profitable': roi_percent > 0,
-            'decision_date': decision_date,
-            'buy_date': buy_date,
-            'sell_date': sell_date
-        }
+                decision = {
+                    "action": action,
+                    "ticker": ticker,
+                    "unique_id": unique_id,  # Identifiant unique pour éviter les doublons
+                    "nom_entreprise": decision_data.get('nom_entreprise', f"Entreprise {ticker}"),
+                    "news_title": title,
+                    "analyzed_at": analyzed_at,
+                    # NOUVELLES DONNÉES DE PERFORMANCE
+                    "prix_decision": prix_decision,
+                    "prix_actuel": prix_actuel,
+                    # ---
+                    "justification": decision_data.get('justification_synthetique', decision_data.get('justification', 'Analyse automatique BERZERK')),
+                    "points_positifs": decision_data.get('points_cles_positifs', ['Analyse favorable']),
+                    "points_negatifs": decision_data.get('points_cles_negatifs_risques', ['Risques standards']),
+                    "allocation_pct": decision_data.get('allocation_capital_pourcentage', decision_data.get('allocation_pourcentage', 0.0)),
+                    "confiance": decision_data.get('confiance', 'MOYENNE'),
+                    "horizon": decision_data.get('horizon', 'Court Terme'),
+                    "article_link": link
+                }
+                decisions.append(decision)
+                
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Erreur parsing JSON pour '{title}': {e}")
+                continue
+                
+        return decisions
         
     except Exception as e:
-        return None
+        st.error(f"Erreur critique chargement données : {e}")
+        return []
 
-# =============================================================================
-# FONCTIONS D'AFFICHAGE
-# =============================================================================
+def get_sample_decisions() -> List[Dict[str, Any]]:
+    """Génère des décisions d'exemple pour la démonstration (avec données de performance)."""
+    return [
+        {
+            "action": "ACHETER",
+            "ticker": "AAPL",
+            "unique_id": "sample001",
+            "nom_entreprise": "Apple Inc.",
+            "news_title": "Apple annonce des avancées majeures dans l'IA pour l'iPhone 17.",
+            "analyzed_at": "2024-12-07T14:32:00",
+            "prix_decision": 195.50,
+            "prix_actuel": get_current_price("AAPL"),
+            "justification": "L'annonce d'une nouvelle puce IA devrait booster les ventes et donner un avantage concurrentiel significatif à Apple sur le marché des smartphones.",
+            "points_positifs": ["Avantage concurrentiel IA", "Cycle de remplacement accéléré", "Marges élevées"],
+            "points_negatifs": ["Risques d'exécution", "Valorisation déjà élevée", "Concurrence intense"],
+            "allocation_pct": 2.5,
+            "confiance": "ÉLEVÉE",
+            "horizon": "Moyen Terme",
+            "article_link": "https://example.com/apple-ai-news"
+        },
+        {
+            "action": "VENDRE",
+            "ticker": "XOM",
+            "unique_id": "sample002",
+            "nom_entreprise": "ExxonMobil Corporation",
+            "news_title": "OPEC+ augmente la production, craintes de surabondance pétrolière",
+            "analyzed_at": "2024-12-07T12:15:00",
+            "prix_decision": 118.75,
+            "prix_actuel": get_current_price("XOM"),
+            "justification": "La surabondance de l'offre pétrolière et les craintes sur la demande exercent une pression baissière directe sur la rentabilité future de XOM.",
+            "points_positifs": ["Dividende stable", "Gestion financière solide"],
+            "points_negatifs": ["Pression sur les prix du pétrole", "Surabondance de l'offre", "Demande incertaine"],
+            "allocation_pct": 0.0,
+            "confiance": "MOYENNE",
+            "horizon": "Court Terme",
+            "article_link": "https://example.com/opec-oil-news"
+        },
+        {
+            "action": "SURVEILLER",
+            "ticker": "NVDA",
+            "unique_id": "sample003",
+            "nom_entreprise": "NVIDIA Corporation",
+            "news_title": "NVIDIA présente ses nouveaux processeurs IA de nouvelle génération",
+            "analyzed_at": "2024-12-07T10:45:00",
+            "prix_decision": 485.20,
+            "prix_actuel": get_current_price("NVDA"),
+            "justification": "Innovation prometteuse mais valorisation déjà élevée. Attendre une correction pour une meilleure opportunité d'entrée.",
+            "points_positifs": ["Leadership IA", "Innovation continue", "Demande croissante"],
+            "points_negatifs": ["Valorisation excessive", "Volatilité élevée", "Dépendance cyclique"],
+            "allocation_pct": 1.0,
+            "confiance": "FAIBLE",
+            "horizon": "Long Terme",
+            "article_link": "https://example.com/nvidia-ai-news"
+        }
+    ]
 
-def parse_decision_json(decision_json: str) -> Dict:
-    """Parse le JSON de décision de manière sécurisée"""
-    if not decision_json:
-        return {}
-    try:
-        return json.loads(decision_json)
-    except:
-        return {}
+def display_decision_card(decision: Dict[str, Any]):
+    """Affiche une carte de décision 2.1 avec suivi de performance intégré."""
+    action = decision['action']
+    color_map = {"ACHETER": "#28a745", "VENDRE": "#dc3545", "SURVEILLER": "#ffc107", "IGNORER": "#6c757d"}
+    
+    with st.container(border=True):
+        
+        # === EN-TÊTE INTÉGRÉ (INFO + GRAPHIQUE) ===
+        header_cols = st.columns([1, 2.5, 2])
+        
+        with header_cols[0]:
+            # Badge d'action
+            st.markdown(f"""
+                <div style="background-color: {color_map.get(action, '#6c757d')}; color: white; padding: 12px; text-align: center; border-radius: 8px; font-weight: bold; font-size: 1.1rem; height: 100%;">
+                    {action}
+                </div>
+            """, unsafe_allow_html=True)
 
-def get_decision_color(action: str) -> str:
-    """Retourne la couleur associée à une action"""
-    colors = {
-        'ACHETER': '#28a745',
-        'VENDRE': '#dc3545',
-        'SURVEILLER': '#ffc107',
-        'IGNORER': '#6c757d'
-    }
-    return colors.get(action, '#6c757d')
+        with header_cols[1]:
+            # Ticker, Nom et News
+            st.subheader(f"{decision['ticker']} - {decision['nom_entreprise']}")
+            st.write(f"_{decision['news_title']}_")
+            analyzed_dt = datetime.fromisoformat(decision['analyzed_at'].replace('Z', '+00:00'))
+            st.caption(f"Analyse du {analyzed_dt.strftime('%d/%m/%y %H:%M')}")
+            
+        with header_cols[2]:
+            # Sparkline avec clé unique
+            sparkline_fig, trend = get_sparkline_chart(decision['ticker'])
+            if sparkline_fig:
+                # Clé unique utilisant ticker + unique_id pour éviter les doublons
+                unique_key = f"sparkline_{decision['ticker']}_{decision['unique_id']}"
+                st.plotly_chart(sparkline_fig, use_container_width=True, key=unique_key)
+                st.caption(f"Tendance 7J: {trend}")
+            else:
+                st.caption("Tendance 7J: Données indisponibles")
 
-def display_simple_article_card(article: Dict):
-    """Affiche une carte d'article ULTRA SIMPLE et LISIBLE"""
-    decision = parse_decision_json(article.get('decision_json', '{}'))
-    
-    # Container principal
-    st.markdown('<div class="article-card">', unsafe_allow_html=True)
-    
-    # TITRE de l'article (gros et lisible)
-    title = article['title']
-    if len(title) > 80:
-        title = title[:80] + "..."
-    
-    st.markdown(f'<div class="article-title">{title}</div>', unsafe_allow_html=True)
-    
-    # INFOS RAPIDES
-    source = article.get('source', 'Bloomberg')
-    date_str = article.get('published_date', '')
-    if date_str:
+        # --- NOUVELLE SECTION : SUIVI DE PERFORMANCE (AVEC CONDITION) ---
+        # On affiche la performance SEULEMENT si on a un prix de décision valide (> 0)
+        if decision['prix_decision'] > 0 and decision['prix_actuel'] > 0:
+            st.markdown("---")
+            st.markdown('<div class="key-indicator-title" style="text-align:left; margin-bottom: 0.5rem;">📊 Suivi de la Position</div>', unsafe_allow_html=True)
+            
+            perf_cols = st.columns(3)
+            
+            # Calcul de la performance
+            perf_pct = 0
+            if decision['action'] == "ACHETER":
+                perf_pct = ((decision['prix_actuel'] - decision['prix_decision']) / decision['prix_decision']) * 100
+            elif decision['action'] == "VENDRE": # Vente à découvert
+                perf_pct = ((decision['prix_decision'] - decision['prix_actuel']) / decision['prix_decision']) * 100
+
+            perf_color = "perf-positive" if perf_pct >= 0 else "perf-negative"
+            perf_emoji = "📈" if perf_pct >= 0 else "📉"
+            
+            with perf_cols[0]:
+                st.metric("Prix à la décision", f"{decision['prix_decision']:.2f} $")
+            with perf_cols[1]:
+                st.metric("Prix actuel", f"{decision['prix_actuel']:.2f} $")
+            with perf_cols[2]:
+                # On remplace le conteneur de performance par une métrique standard pour un meilleur alignement
+                st.metric("Performance", f"{perf_pct:+.2f}%", delta_color="normal" if perf_pct >= 0 else "inverse")
+
+        st.markdown("---")
+        # --- FIN DE LA SECTION MODIFIÉE ---
+
+        # === INDICATEURS CLÉS ===
+        kpi_cols = st.columns(3)
+        
+        # Récupération du secteur via yfinance (gestion silencieuse des erreurs)
+        sector = "N/A"
         try:
-            date_obj = datetime.fromisoformat(date_str)
-            date_display = date_obj.strftime('%d/%m à %H:%M')
+            stock_info = yf.Ticker(decision['ticker']).info
+            sector = stock_info.get('sector', 'N/A')
         except:
-            date_display = 'Date inconnue'
-    else:
-        date_display = 'Date inconnue'
-    
-    st.markdown(f'<div class="article-meta">📰 {source} • 📅 {date_display}</div>', unsafe_allow_html=True)
-    
-    # CONTENU PRINCIPAL selon le statut
-    if article['status'] == 'analyzed' and decision:
-        # === ARTICLE ANALYSÉ ===
-        
-        # Action principale (gros badge visible)
-        action = decision.get('action', decision.get('decision', 'INCONNUE')).upper()
-        ticker = decision.get('ticker', 'N/A')
-        
-        if action == 'ACHETER':
-            badge_class = 'badge-acheter'
-            message = f'✅ ACHETER'
-            if ticker != 'N/A':
-                message += f' • {ticker}'
-        elif action == 'SURVEILLER':
-            badge_class = 'badge-surveiller'
-            message = f'👀 SURVEILLER'
-            if ticker != 'N/A':
-                message += f' • {ticker}'
-        elif action == 'VENDRE':
-            badge_class = 'badge-vendre'
-            message = f'❌ VENDRE'
-            if ticker != 'N/A':
-                message += f' • {ticker}'
-        else:
-            badge_class = 'badge-ignorer'
-            message = f'⚪ IGNORER'
-        
-        st.markdown(f'<div class="{badge_class}">{message}</div>', unsafe_allow_html=True)
-        
-        # Détails importants (3 colonnes)
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            confidence = decision.get('confidence', decision.get('confiance', 'N/A'))
-            st.markdown(f'<div class="inline-metric"><strong>Confiance:</strong><br/>{confidence}</div>', unsafe_allow_html=True)
-        
-        with col2:
-            allocation = decision.get('allocation_pourcentage', decision.get('allocation_percent', 0.0))
-            st.markdown(f'<div class="inline-metric"><strong>Allocation:</strong><br/>{allocation}%</div>', unsafe_allow_html=True)
-        
-        with col3:
-            if ticker != 'N/A':
-                st.markdown(f'<div class="inline-metric"><strong>Titre:</strong><br/>{ticker}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="inline-metric"><strong>Statut:</strong><br/>Pas de titre</div>', unsafe_allow_html=True)
-        
-        # Justification (simple)
-        justification = decision.get('justification', '')
-        if len(justification) > 20:
-            with st.expander("📋 Voir le raisonnement complet"):
-                st.write(justification)
-        
-    else:
-        # === ARTICLE NON ANALYSÉ ===
-        if article['status'] == 'pending':
-            st.markdown('**🕒 EN ATTENTE D\'ANALYSE**')
-            st.info('Cet article sera analysé bientôt.')
-        elif article['status'] == 'in_progress':
-            st.markdown('**⚡ ANALYSE EN COURS**')
-            st.info('L\'IA analyse cet article maintenant.')
-        elif article['status'] == 'error':
-            st.markdown('**❌ ERREUR**')
-            st.error('Problème lors de l\'analyse.')
-        else:
-            st.markdown(f'**❓ STATUT: {article["status"].upper()}**')
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown("---")  # Séparateur visible
+            pass
 
-def display_live_feed_tab():
-    """Affiche l'onglet Live Feed ultra-simplifié"""
-    
-    # Récupération des statistiques
-    stats = get_dashboard_stats()
-    
-    # EN-TÊTE SIMPLE
-    st.markdown("# 📈 Analyses en Temps Réel")
-    st.markdown("Surveillance automatique des actualités financières Bloomberg")
-    st.markdown("---")
-    
-    # Controls rapides
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        if st.button("🔄 Actualiser", type="primary"):
-            st.cache_data.clear()
-            st.rerun()
-    
-    with col2:
-        auto_refresh = st.checkbox("🔁 Auto-actualisation", value=False, help="Actualise automatiquement toutes les 30 secondes")
-        if auto_refresh:
-            time.sleep(30)
-            st.rerun()
-    
-    # TABLEAU DE BORD SIMPLE
-    st.markdown("## 📊 Situation Actuelle")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric(
-            "📰 Articles Total", 
-            stats['total_articles'],
-            help="Nombre total d'articles dans la base"
-        )
-    
-    with col2:
-        analyzed_count = stats['analyzed_articles']
-        st.metric(
-            "✅ Analysés", 
-            analyzed_count,
-            help="Articles analysés par l'IA"
-        )
-    
-    with col3:
-        buy_count = stats.get('buy_decisions', 0)
-        st.metric(
-            "🎯 Opportunités", 
-            buy_count,
-            help="Recommandations d'achat détectées"
-        )
-    
-    # FILTRES SIMPLES
-    st.markdown("---")
-    st.markdown("## 🔍 Filtres")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        show_filter = st.selectbox(
-            "Afficher:",
-            ["Tous les articles", "Seulement les analysés", "Seulement les recommandations d'achat"]
-        )
-    
-    with col2:
-        period_filter = st.selectbox(
-            "Période:",
-            ["Toutes", "Dernières 24h", "Cette semaine"]
-        )
-    
-    # RÉCUPÉRATION ET FILTRAGE DES ARTICLES
-    articles = get_articles_with_decisions()
-    
-    # Application des filtres
-    if show_filter == "Seulement les analysés":
-        articles = [a for a in articles if a['status'] == 'analyzed']
-    elif show_filter == "Seulement les recommandations d'achat":
-        articles = [a for a in articles if a['status'] == 'analyzed' and 'ACHETER' in str(a.get('decision_json', ''))]
-    
-    if period_filter != "Toutes":
-        days_map = {"Dernières 24h": 1, "Cette semaine": 7}
-        days = days_map[period_filter]
-        cutoff_date = datetime.now() - timedelta(days=days)
-        articles = [a for a in articles if datetime.fromisoformat(a.get('published_date', '1970-01-01')) > cutoff_date]
-    
-    # AFFICHAGE DES ARTICLES
-    st.markdown("---")
-    st.markdown(f"## 📋 Articles ({len(articles)} résultats)")
-    
-    if len(articles) == 0:
-        st.info("🔍 Aucun article trouvé avec ces filtres.")
-    else:
-        for article in articles:
-            display_simple_article_card(article)
+        with kpi_cols[0]:
+            st.markdown('<div class="key-indicator-title">Force du Signal</div>', unsafe_allow_html=True)
+            display_confidence_signal(decision.get('confiance', 'INCONNUE'))
 
-def display_performance_tab():
-    """Affiche l'onglet Performance & Backtest"""
-    st.markdown('<div class="main-header"><h1>🏆 Performance & Backtest</h1></div>', unsafe_allow_html=True)
-    
-    # Boutons de contrôle
-    col1, col2 = st.columns([1, 5])
-    
-    with col1:
-        if st.button("🔄 Actualiser Performance", type="primary"):
-            st.cache_data.clear()
-            st.rerun()
-    
-    # Récupération des données de backtest
-    buy_decisions = get_backtest_data()
-    
-    if not buy_decisions:
-        st.warning("Aucune décision d'achat trouvée pour effectuer le backtest.")
-        return
-    
-    st.info(f"📊 {len(buy_decisions)} décisions d'achat trouvées pour le backtest")
-    
-    # Simulation des trades
-    with st.spinner("🔄 Simulation des trades en cours..."):
-        trade_results = []
+        with kpi_cols[1]:
+            st.markdown('<div class="key-indicator-title">Horizon</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="key-indicator-value">{decision.get("horizon", "N/A")}</div>', unsafe_allow_html=True)
         
-        progress_bar = st.progress(0)
-        
-        for i, decision in enumerate(buy_decisions):
-            result = simulate_trade_performance(
-                decision['ticker'], 
-                decision['decision_date']
-            )
-            
-            if result:
-                result.update({
-                    'title': decision['title'],
-                    'allocation': decision['allocation'],
-                    'confidence': decision['confiance']
-                })
-                trade_results.append(result)
-            
-            progress_bar.progress((i + 1) / len(buy_decisions))
-        
-        progress_bar.empty()
-    
-    if not trade_results:
-        st.error("Aucun trade n'a pu être simulé.")
-        return
-    
-    # Calcul des KPIs
-    total_trades = len(trade_results)
-    winning_trades = len([t for t in trade_results if t['is_profitable']])
-    losing_trades = total_trades - winning_trades
-    win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
-    
-    total_roi = sum(t['roi_percent'] for t in trade_results)
-    avg_roi = total_roi / total_trades if total_trades > 0 else 0
-    
-    best_trade = max(trade_results, key=lambda x: x['roi_percent'])
-    worst_trade = min(trade_results, key=lambda x: x['roi_percent'])
-    
-    # A. KPIs de Performance
-    st.markdown("### 📈 KPIs de Performance")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric(
-            "🎯 Taux de Réussite", 
-            f"{win_rate:.1f}%",
-            delta=f"{winning_trades}/{total_trades}",
-            help="Pourcentage de trades rentables"
-        )
-    
-    with col2:
-        color = "normal" if avg_roi >= 0 else "inverse"
-        st.metric(
-            "📊 ROI Moyen", 
-            f"{avg_roi:+.2f}%",
-            help="Retour sur investissement moyen par trade"
-        )
-    
-    with col3:
-        st.metric(
-            "✅ Trades Gagnants", 
-            winning_trades,
-            help="Nombre de trades profitables"
-        )
-    
-    with col4:
-        st.metric(
-            "❌ Trades Perdants", 
-            losing_trades,
-            help="Nombre de trades en perte"
-        )
-    
-    # B. Graphique de Performance Cumulée
-    st.markdown("### 📈 Performance Cumulée")
-    
-    # Calcul de la performance cumulée
-    cumulative_performance = []
-    capital = 100  # Capital initial de 100€
-    
-    for i, trade in enumerate(trade_results):
-        capital = capital * (1 + trade['roi_percent'] / 100)
-        cumulative_performance.append({
-            'Trade': i + 1,
-            'Capital': capital,
-            'Date': trade['decision_date'],
-            'Ticker': trade['ticker'],
-            'ROI': trade['roi_percent']
-        })
-    
-    df_perf = pd.DataFrame(cumulative_performance)
-    
-    # Graphique Plotly
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=df_perf['Trade'],
-        y=df_perf['Capital'],
-        mode='lines+markers',
-        name='Capital Cumulé',
-        line=dict(color='#2a5298', width=3),
-        marker=dict(size=6),
-        hovertemplate='<b>Trade %{x}</b><br>' +
-                      'Capital: %{y:.2f}€<br>' +
-                      'ROI: %{customdata:.2f}%<extra></extra>',
-        customdata=df_perf['ROI']
-    ))
-    
-    fig.add_hline(y=100, line_dash="dash", line_color="gray", 
-                  annotation_text="Capital Initial (100€)")
-    
-    fig.update_layout(
-        title="🚀 Évolution du Capital (100€ initial)",
-        xaxis_title="Numéro de Trade",
-        yaxis_title="Capital (€)",
-        height=500,
-        showlegend=True,
-        hovermode='x unified'
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Métriques finales
-    final_capital = df_perf['Capital'].iloc[-1]
-    total_return = ((final_capital - 100) / 100) * 100
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(
-            "💰 Capital Final", 
-            f"{final_capital:.2f}€",
-            delta=f"{total_return:+.2f}%"
-        )
-    
-    with col2:
-        st.metric(
-            "🎯 Performance Totale", 
-            f"{total_return:+.2f}%",
-            help="Performance totale depuis le début"
-        )
-    
-    # C. Tableau des Trades Détaillés
-    st.markdown("### 📋 Tableau des Trades Détaillés")
-    
-    # Préparation du DataFrame
-    df_trades = pd.DataFrame(trade_results)
-    
-    # Formatage des colonnes
-    df_trades['decision_date'] = pd.to_datetime(df_trades['decision_date']).dt.strftime('%Y-%m-%d')
-    df_trades['buy_date'] = pd.to_datetime(df_trades['buy_date']).dt.strftime('%Y-%m-%d')
-    df_trades['Performance'] = df_trades['roi_percent'].apply(lambda x: f"{x:+.2f}%")
-    
-    # Sélection des colonnes à afficher
-    display_columns = ['ticker', 'title', 'decision_date', 'buy_price', 'sell_price', 'Performance', 'confidence']
-    df_display = df_trades[display_columns].copy()
-    
-    # Renommage des colonnes
-    df_display.columns = ['Ticker', 'Titre', 'Date Décision', 'Prix Achat', 'Prix Vente', 'Performance', 'Confiance']
-    
-    # Style conditionnel
-    def highlight_performance(row):
-        if 'Performance' in row:
-            if '+' in str(row['Performance']):
-                return ['background-color: #d4edda'] * len(row)
-            else:
-                return ['background-color: #f8d7da'] * len(row)
-        return [''] * len(row)
-    
-    # Affichage du tableau stylé
-    styled_df = df_display.style.apply(highlight_performance, axis=1)
-    st.dataframe(styled_df, use_container_width=True, height=400)
-    
-    # D. Meilleurs et Pires Trades
-    st.markdown("### 🏆 Meilleurs et Pires Trades")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 🥇 Meilleur Trade")
-        st.success(f"**{best_trade['ticker']}** - {best_trade['roi_percent']:+.2f}%")
-        st.write(f"📅 {best_trade['decision_date'].strftime('%Y-%m-%d')}")
-        st.write(f"💰 {best_trade['buy_price']} → {best_trade['sell_price']}")
-        st.write(f"📰 {best_trade['title'][:50]}...")
-    
-    with col2:
-        st.markdown("#### 📉 Pire Trade")
-        st.error(f"**{worst_trade['ticker']}** - {worst_trade['roi_percent']:+.2f}%")
-        st.write(f"📅 {worst_trade['decision_date'].strftime('%Y-%m-%d')}")
-        st.write(f"💰 {worst_trade['buy_price']} → {worst_trade['sell_price']}")
-        st.write(f"📰 {worst_trade['title'][:50]}...")
+        with kpi_cols[2]:
+            st.markdown('<div class="key-indicator-title">Secteur</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="key-indicator-value">{sector}</div>', unsafe_allow_html=True)
 
-# =============================================================================
-# INTERFACE PRINCIPALE
-# =============================================================================
+        # === EXPANDER POUR LES DÉTAILS ===
+        with st.expander("▼ Voir le raisonnement de l'IA et les détails"):
+            st.markdown("#### Justification de l'IA")
+            st.write(decision['justification'])
+            st.markdown("---")
+            col_pos, col_neg = st.columns(2)
+            with col_pos:
+                st.markdown("✅ **Points Clés Positifs**")
+                for point in decision['points_positifs']:
+                    st.write(f"• {point}")
+            with col_neg:
+                st.markdown("⚠️ **Risques & Points Négatifs**")
+                for point in decision['points_negatifs']:
+                    st.write(f"• {point}")
+            if decision['action'] == "ACHETER":
+                 st.info(f"💡 Allocation Suggérée: {decision['allocation_pct']}% du capital de trading.")
+            st.link_button("Consulter l'article original ↗", decision['article_link'])
 
 def main():
-    """Interface principale du BERZERK Command Center"""
+    """Fonction principale de l'interface Decision Feed."""
     
-    # Navigation par onglets
-    tab1, tab2 = st.tabs(["📈 Live Feed", "🏆 Performance & Backtest"])
+    # === STYLES CSS ENRICHIS ===
+    st.markdown("""
+        <style>
+        /* STYLES EXISTANTS POUR LA CARTE AMÉLIORÉE */
+        .signal-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .signal-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+        }
+        .signal-bar {
+            width: 6px;
+            background-color: #e0e0e0;
+            border-radius: 2px;
+        }
+        .signal-bar:nth-child(1) { height: 8px; }
+        .signal-bar:nth-child(2) { height: 12px; }
+        .signal-bar:nth-child(3) { height: 16px; }
+        .signal-bar.filled {
+            background-color: #34a853;
+        }
+        .signal-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .key-indicator-title {
+            font-size: 0.8rem;
+            color: #5f6368;
+            margin-bottom: 0.3rem;
+            text-transform: uppercase;
+        }
+        .key-indicator-value {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #202124;
+        }
+        
+        /* NOUVEAUX STYLES POUR LA PERFORMANCE */
+        .perf-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 0.5rem;
+            padding: 0.8rem 1rem;
+            text-align: center;
+            background-color: #f8f9fa;
+        }
+        .perf-label {
+            font-size: 0.75rem;
+            color: #5f6368;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+        .perf-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .perf-positive { color: #1e8e3e; }
+        .perf-negative { color: #d93025; }
+        </style>
+    """, unsafe_allow_html=True)
     
-    with tab1:
-        display_live_feed_tab()
+    # === EN-TÊTE ===
+    st.title("⚡ BERZERK - Decision Feed")
+    st.caption("Analyse IA. Décisions Immédiates. Suivi de Performance Temps Réel.")
     
-    with tab2:
-        display_performance_tab()
+    # === BARRE DE STATUT ===
+    stat_col1, stat_col2, stat_col3 = st.columns(3)
+    
+    # Charger les décisions
+    decisions = load_decisions_from_db()
+    
+    # Si pas de données réelles, utiliser les exemples
+    if not decisions:
+        st.warning("🔄 Aucune décision récente dans la base. Affichage des exemples.")
+        decisions = get_sample_decisions()
+    
+    # Calculs pour les statistiques
+    now = datetime.now()
+    decisions_24h = len([d for d in decisions if datetime.fromisoformat(d['analyzed_at'].replace('Z', '+00:00')) > now - timedelta(hours=24)])
+    achats_24h = len([d for d in decisions if d['action'] == 'ACHETER' and datetime.fromisoformat(d['analyzed_at'].replace('Z', '+00:00')) > now - timedelta(hours=24)])
+    
+    with stat_col1:
+        st.metric("Statut Système", "🟢 Opérationnel")
+    
+    with stat_col2:
+        st.metric("Décisions 24h", decisions_24h)
+    
+    with stat_col3:
+        st.metric("Signaux ACHAT 24h", achats_24h)
+    
+    st.markdown("---")
+    
+    # === FLUX PRINCIPAL ===
+    if decisions:
+        st.markdown("### 📈 Flux de Décisions avec Suivi de Performance")
+        
+        for decision in decisions:
+            display_decision_card(decision)
+            st.markdown("")  # Espace entre les cartes
+    else:
+        st.info("📊 Aucune décision à afficher pour le moment.")
+        st.markdown("Lancez le monitoring pour commencer à générer des décisions : `python start_realtime_monitor.py`")
 
 if __name__ == "__main__":
     main() 

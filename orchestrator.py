@@ -54,6 +54,7 @@ class InvestmentDecision(BaseModel):
     decision: str = Field(description="ACHETER, VENDRE, SURVEILLER ou IGNORER")
     ticker: str = Field(description="Ticker de l'action concernée ou null")
     confiance: str = Field(description="ÉLEVÉE, MOYENNE ou FAIBLE")
+    horizon: str = Field(description="Court Terme, Moyen Terme, ou Long Terme")
     justification_synthetique: str = Field(description="Justification en une phrase")
     allocation_capital_pourcentage: float = Field(description="Pourcentage du capital à allouer (0.0 à 5.0)")
     points_cles_positifs: List[str] = Field(description="Points positifs clés")
@@ -410,6 +411,20 @@ def node_final_investor_decision(state: GraphState) -> GraphState:
             # C'est déjà un dictionnaire
             decision_dict = decision_obj
         # --- FIN DE LA CORRECTION ---
+
+        # --- DÉBUT DE LA CORRECTION LOGIQUE ---
+        # Si la décision est d'acheter mais que l'allocation est nulle,
+        # la confiance est insuffisante. On ramène la décision à SURVEILLER.
+        if (decision_dict.get('decision') == 'ACHETER' and 
+            decision_dict.get('allocation_capital_pourcentage', 0.0) == 0.0):
+            
+            log_step(state, "⚠️  INCOHÉRENCE DÉTECTÉE: ACHAT avec 0% d'allocation. Décision rétrogradée à SURVEILLER.")
+            
+            # Rétrograder la décision
+            decision_dict['decision'] = 'SURVEILLER'
+            decision_dict['confiance'] = 'FAIBLE' # Forcer la confiance à FAIBLE
+            decision_dict['justification_synthetique'] = f"[Rétrogradé] Signal d'achat détecté mais confiance insuffisante pour une allocation de capital. {decision_dict.get('justification_synthetique', '')}"
+        # --- FIN DE LA CORRECTION LOGIQUE ---
         
         state['final_decision'] = decision_dict
         
