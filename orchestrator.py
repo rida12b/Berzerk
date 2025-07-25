@@ -15,6 +15,7 @@ import sys
 from datetime import datetime
 from typing import Any, TypedDict
 
+import yfinance as yf
 from langchain_core.output_parsers import JsonOutputParser
 
 # LangGraph Imports
@@ -58,7 +59,7 @@ class GraphState(TypedDict):
 class InvestmentDecision(BaseModel):
     """Modèle pour valider la décision finale d'investissement."""
 
-    decision: str = Field(description="ACHETER, VENDRE, SURVEILLER ou IGNORER")
+    decision: str = Field(description="LONG (pari sur la hausse), SHORT (pari sur la baisse), SURVEILLER ou IGNORER")
     ticker: str = Field(description="Ticker de l'action concernée ou null")
     confiance: str = Field(description="ÉLEVÉE, MOYENNE ou FAIBLE")
     horizon: str = Field(description="Court Terme, Moyen Terme, ou Long Terme")
@@ -68,6 +69,60 @@ class InvestmentDecision(BaseModel):
     )
     points_cles_positifs: list[str] = Field(description="Points positifs clés")
     points_cles_negatifs_risques: list[str] = Field(description="Risques identifiés")
+
+
+# --- FONCTION DE CAPTURE DE PRIX ---
+
+
+def get_live_price(ticker: str) -> float:
+    """Récupère le prix le plus récent disponible pour un ticker avec des fallbacks robustes."""
+    ticker = ticker.strip().replace("$", "")
+    if not ticker:
+        print(f"[WARN] Ticker vide ou invalide pour la capture de prix.")
+        return 0.0
+    try:
+        stock = yf.Ticker(ticker)
+        # 1. Tentative Intraday
+        print(f"[INFO] Tentative de récupération du prix intraday pour {ticker}...")
+        try:
+            data = stock.history(period="1d", interval="1m")
+            if not data.empty:
+                price = float(data["Close"].iloc[-1])
+                print(f"[INFO] Prix intraday récupéré pour {ticker}: {price}")
+                return price
+            else:
+                print(f"[WARN] Pas de données intraday pour {ticker}.")
+        except Exception as e:
+            print(f"[WARN] Échec récupération intraday pour {ticker}: {e}")
+        # 2. Tentative via stock.info
+        print(f"[INFO] Tentative de récupération du prix via info pour {ticker}...")
+        try:
+            info = stock.info
+            price = info.get("regularMarketPrice") or info.get("currentPrice")
+            if price:
+                print(f"[INFO] Prix info récupéré pour {ticker}: {price}")
+                return float(price)
+            else:
+                print(f"[WARN] Pas de prix dans info pour {ticker}.")
+        except Exception as e:
+            print(f"[WARN] Échec récupération info pour {ticker}: {e}")
+        # 3. Tentative Historique 5j
+        print(f"[INFO] Tentative de récupération du prix historique (5j) pour {ticker}...")
+        try:
+            hist = stock.history(period="5d")
+            if not hist.empty:
+                price = float(hist["Close"].iloc[-1])
+                print(f"[INFO] Prix historique récupéré pour {ticker}: {price}")
+                return price
+            else:
+                print(f"[WARN] Pas de données historiques pour {ticker}.")
+        except Exception as e:
+            print(f"[WARN] Échec récupération historique pour {ticker}: {e}")
+        print(f"[WARN] Impossible de récupérer le prix pour {ticker} après tous les fallbacks.")
+        return 0.0
+    except Exception as e:
+        print(f"[WARN] Exception inattendue lors de la récupération du prix pour {ticker}: {e}")
+        return 0.0
 
 
 # --- FONCTIONS UTILITAIRES ---
@@ -148,27 +203,46 @@ def node_find_actionable_tickers(state: GraphState) -> GraphState:
             full_article_text=state["full_article_text"],
         )
 
-        actionable_tickers = ticker_result.get("tickers_identifies", [])
-        state["actionable_tickers"] = actionable_tickers
+        raw_tickers = ticker_result.get("tickers_identifies", [])
+        
+        if not raw_tickers:
+            log_step(state, "⚠️  Aucun ticker actionnable identifié par l'IA.")
+            state["actionable_tickers"] = []
+            return state
 
-        if actionable_tickers:
-            log_step(
-                state,
-                f"🎯 {len(actionable_tickers)} ticker(s) actionnable(s) identifié(s)",
-            )
-            for ticker_info in actionable_tickers:
-                # Gestion des objets Pydantic ET des dictionnaires
-                if hasattr(ticker_info, "ticker"):
-                    ticker = ticker_info.ticker
-                    company = ticker_info.nom_entreprise
+        log_step(state, f"🔬 {len(raw_tickers)} ticker(s) brut(s) identifié(s). Validation en cours...")
+        
+        validated_tickers = []
+        for ticker_info in raw_tickers:
+            # Gestion des Pydantic/dict
+            ticker_symbol = ticker_info.ticker if hasattr(ticker_info, 'ticker') else ticker_info.get("ticker", "")
+            
+            # 1. Nettoyage (déjà fait dans agents.py mais redondance sécuritaire)
+            clean_ticker = ticker_symbol.strip().replace("$", "")
+
+            # 2. Vérification de viabilité avec yfinance (L'AJOUT CRUCIAL)
+            try:
+                stock = yf.Ticker(clean_ticker)
+                # On fait un appel très léger juste pour voir si le ticker existe
+                info = stock.info
+                if not info or info.get('regularMarketPrice') is None and info.get('currentPrice') is None:
+                    raise ValueError("Ticker non trouvé ou sans données de prix.")
+                
+                log_step(state, f"✅ Ticker '{clean_ticker}' validé avec yfinance.")
+                
+                # Mettre à jour le ticker nettoyé dans l'objet
+                if hasattr(ticker_info, 'ticker'):
+                    ticker_info.ticker = clean_ticker
                 else:
-                    ticker = ticker_info.get("ticker", "N/A")
-                    company = ticker_info.get("nom_entreprise", "N/A")
-                log_step(state, f"   → {ticker} ({company})")
-        else:
-            log_step(
-                state, "⚠️  Aucun ticker actionnable identifié - Pipeline orienté macro"
-            )
+                    ticker_info['ticker'] = clean_ticker
+
+                validated_tickers.append(ticker_info)
+
+            except Exception as e:
+                log_step(state, f"❌ Ticker '{clean_ticker}' REJETÉ après validation yfinance. Raison: {e}")
+
+        state["actionable_tickers"] = validated_tickers
+        log_step(state, f"🎯 {len(validated_tickers)} ticker(s) final(aux) après validation.")
 
     except Exception as e:
         log_step(state, f"❌ ERREUR dans le Ticker Hunter: {str(e)}")
@@ -257,21 +331,35 @@ def node_route_to_agents(state: GraphState) -> GraphState:
 
         else:
             # Mode FALLBACK : Analyse macro classique
-            entities = state["initial_analysis"].get("entites", [])
-            team = route_to_agents(entities, state["news_summary"])
-            log_step(state, "⚠️ Mode FALLBACK - Pas de tickers, analyse macro")
-
-        if not team:
-            raise ValueError("Aucun agent recruté par le routeur")
+            team = [
+                {
+                    "agent_type": "strategiste_geopolitique",
+                    "focus": "Analyse macroéconomique générale de la situation"
+                }
+            ]
+            log_step(state, "⚠️ Aucun ticker actionnable, fallback sur agent macro.")
 
         state["agent_team"] = team
 
-        log_step(state, f"✅ Équipe recrutée: {len(team)} agent(s)")
+        # --- DÉBUT DE LA MODIFICATION ---
+        # Filet de sécurité : Si, pour une raison quelconque, aucun agent n'est
+        # recruté en mode fallback, on assigne un stratège géopolitique par défaut.
+        if not team:
+            log_step(state, "⚠️ Aucun agent recruté. Assignation d'un agent par défaut pour éviter l'échec.")
+            state["agent_team"] = [
+                {
+                    "agent_type": "strategiste_geopolitique",
+                    "focus": "Analyse macroéconomique générale de la situation"
+                }
+            ]
+        # --- FIN DE LA MODIFICATION ---
+
+        log_step(state, f"✅ Équipe recrutée: {len(state['agent_team'])} agent(s)")
         for agent in team:
             log_step(state, f"   - {agent['agent_type']} → Focus: {agent['focus']}")
 
     except Exception as e:
-        log_step(state, f"❌ ERREUR dans le routage: {str(e)}")
+        log_step(state, f"❌ ERREUR dans le routage des agents: {str(e)}")
         state["agent_team"] = []
 
     return state
@@ -494,24 +582,39 @@ def node_final_investor_decision(state: GraphState) -> GraphState:
             decision_dict = decision_obj
         # --- FIN DE LA CORRECTION ---
 
+        # --- NOUVEAU : CAPTURE DU PRIX AU MOMENT DE LA DÉCISION ---
+        decision_ticker = decision_dict.get("ticker")
+        prix_au_moment_decision = 0.0
+        if decision_ticker:
+            log_step(state, f"💰 Capture du prix live pour {decision_ticker}...")
+            prix_au_moment_decision = get_live_price(decision_ticker)
+            if prix_au_moment_decision > 0:
+                log_step(state, f"✅ Prix capturé : {prix_au_moment_decision:.2f} USD")
+            else:
+                log_step(state, f"⚠️  Impossible de capturer le prix pour {decision_ticker}")
+
+        # NOUVEAU : On ajoute le prix "gravé" à la décision
+        decision_dict["prix_a_la_decision"] = prix_au_moment_decision
+        # --- FIN DE LA CAPTURE DE PRIX ---
+
         # --- DÉBUT DE LA CORRECTION LOGIQUE ---
-        # Si la décision est d'acheter mais que l'allocation est nulle,
+        # Si la décision est LONG mais que l'allocation est nulle,
         # la confiance est insuffisante. On ramène la décision à SURVEILLER.
         if (
-            decision_dict.get("decision") == "ACHETER"
+            decision_dict.get("decision") == "LONG"
             and decision_dict.get("allocation_capital_pourcentage", 0.0) == 0.0
         ):
 
             log_step(
                 state,
-                "⚠️  INCOHÉRENCE DÉTECTÉE: ACHAT avec 0% d'allocation. Décision rétrogradée à SURVEILLER.",
+                "⚠️  INCOHÉRENCE DÉTECTÉE: LONG avec 0% d'allocation. Décision rétrogradée à SURVEILLER.",
             )
 
             # Rétrograder la décision
             decision_dict["decision"] = "SURVEILLER"
             decision_dict["confiance"] = "FAIBLE"  # Forcer la confiance à FAIBLE
             decision_dict["justification_synthetique"] = (
-                f"[Rétrogradé] Signal d'achat détecté mais confiance insuffisante pour une allocation de capital. {decision_dict.get('justification_synthetique', '')}"
+                f"[Rétrogradé] Signal LONG détecté mais confiance insuffisante pour une allocation de capital. {decision_dict.get('justification_synthetique', '')}"
             )
         # --- FIN DE LA CORRECTION LOGIQUE ---
 

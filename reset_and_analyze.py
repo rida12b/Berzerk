@@ -49,7 +49,7 @@ def reset_analyses():
     return pending
 
 
-def get_latest_articles(limit=20):
+def get_latest_articles(limit=10):
     """
     Récupère les derniers articles en attente
     """
@@ -78,53 +78,20 @@ def get_latest_articles(limit=20):
 
 def save_decision_to_db(article_id: int, decision_result: dict) -> bool:
     """
-    Sauvegarde une décision d'investissement dans la base de données
+    Sauvegarde une décision d'investissement dans la base de données.
     """
     try:
         conn = sqlite3.connect("berzerk.db")
         cursor = conn.cursor()
 
-        # Extraire les informations clés de la décision
+        # On récupère l'objet de décision final, qui contient déjà tout (y compris le prix)
         final_decision = decision_result.get("final_decision", {})
 
-        # Gestion des objets Pydantic pour final_decision
-        if hasattr(final_decision, "decision"):
-            # Objet Pydantic
-            decision_action = final_decision.decision
-            decision_ticker = final_decision.ticker
-            decision_confiance = final_decision.confiance
-            decision_justification = final_decision.justification_synthetique
-            decision_allocation = final_decision.allocation_capital_pourcentage
-            decision_positifs = final_decision.points_cles_positifs
-            decision_negatifs = final_decision.points_cles_negatifs_risques
-        else:
-            # Dictionnaire classique
-            decision_action = final_decision.get("decision", "ERREUR")
-            decision_ticker = final_decision.get("ticker", None)
-            decision_confiance = final_decision.get("confiance", "INCONNUE")
-            decision_justification = final_decision.get(
-                "justification_synthetique", "Aucune justification"
-            )
-            decision_allocation = final_decision.get(
-                "allocation_capital_pourcentage", 0.0
-            )
-            decision_positifs = final_decision.get("points_cles_positifs", [])
-            decision_negatifs = final_decision.get("points_cles_negatifs_risques", [])
+        if not final_decision:
+            print("❌ Aucune décision finale trouvée à sauvegarder.")
+            return False
 
-        # Préparer la décision formatée pour la base de données
-        decision_data = {
-            "action": decision_action,
-            "ticker": decision_ticker,
-            "confiance": decision_confiance,
-            "justification": decision_justification,
-            "allocation_pourcentage": decision_allocation,
-            "points_positifs": decision_positifs,
-            "points_negatifs": decision_negatifs,
-            "tickers_identifies": decision_result.get("actionable_tickers", []),
-            "timestamp": datetime.now().isoformat(),
-        }
-
-        # Sauvegarder dans la base de données
+        # On sauvegarde directement l'objet complet sans le reconstruire
         cursor.execute(
             """
             UPDATE articles
@@ -132,13 +99,12 @@ def save_decision_to_db(article_id: int, decision_result: dict) -> bool:
                 status = "analyzed",
                 analyzed_at = ?
             WHERE id = ?
-        """,
-            (json.dumps(decision_data), datetime.now().isoformat(), article_id),
+            """,
+            (json.dumps(final_decision), datetime.now().isoformat(), article_id),
         )
 
         conn.commit()
         conn.close()
-
         return True
 
     except Exception as e:

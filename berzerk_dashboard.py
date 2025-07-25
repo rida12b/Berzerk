@@ -31,69 +31,32 @@ st.set_page_config(
 # --- NOUVELLES FONCTIONS DE PERFORMANCE ---
 
 
-@st.cache_data(ttl=86400)  # Cache de 1 jour, car ce prix historique ne changera pas.
-def get_price_at_decision_time(ticker: str, decision_time_str: str) -> float:
-    """
-    Récupère le prix de clôture du jour de la décision (ou du jour précédent si marché fermé).
-    Cette méthode est extrêmement rapide car elle n'utilise que des données journalières.
-    """
-    ticker = ticker.strip().replace("$", "")
-    if not ticker:
-        return 0.0
-
-    try:
-        decision_dt = datetime.fromisoformat(decision_time_str.replace("Z", "+00:00"))
-        decision_date = decision_dt.date()
-
-        stock = yf.Ticker(ticker)
-
-        # On télécharge une petite plage de données journalières autour de la date de décision. C'est très rapide.
-        hist = stock.history(
-            start=decision_date - timedelta(days=7),
-            end=decision_date + timedelta(days=1),
-        )
-
-        if hist.empty:
-            return 0.0
-
-        # On cherche les données pour le jour exact de la décision
-        day_data = hist[hist.index.date == decision_date]
-
-        # CAS 1: Le marché était ouvert ce jour-là. On prend le prix de clôture.
-        if not day_data.empty:
-            return float(day_data["Close"].iloc[0])
-
-        # CAS 2: Le marché était fermé (weekend/jour férié). On prend la clôture du jour d'avant.
-        else:
-            previous_days_data = hist[hist.index.date < decision_date]
-            if not previous_days_data.empty:
-                return float(previous_days_data["Close"].iloc[-1])
-
-        return 0.0
-    except Exception:
-        return 0.0
-
 
 @st.cache_data(ttl=60)  # Cache 1 minute pour les prix actuels
 def get_current_price(ticker: str) -> float:
-    """Récupère le prix actuel d'une action via yfinance (version robuste)."""
+    """Récupère le prix actuel d'une action avec des fallbacks robustes."""
     ticker = ticker.strip().replace("$", "")  # Nettoyage du ticker
     if not ticker:
         return 0.0
-
     try:
         stock = yf.Ticker(ticker)
-        data = stock.history(
-            period="1d", interval="1m"
-        )  # On prend la dernière minute pour le prix le plus récent
+        
+        # 1. Priorité aux données intraday
+        data = stock.history(period="1d", interval="1m")
         if not data.empty:
             return float(data["Close"].iloc[-1])
 
-        # Fallback si les données intraday ne sont pas dispo
-        price = stock.info.get("regularMarketPrice")
+        # 2. Fallback sur 'info'
+        info = stock.info
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
         if price:
             return float(price)
 
+        # 3. Fallback ultime sur la dernière clôture historique
+        hist = stock.history(period="5d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+            
         return 0.0
     except Exception:
         # Gestion silencieuse des erreurs
@@ -201,12 +164,24 @@ def load_decisions_from_db() -> list[dict[str, Any]]:
         for title, link, _published_date, decision_json, analyzed_at in rows:
             try:
                 decision_data = json.loads(decision_json)
-                action = decision_data.get(
-                    "action", decision_data.get("decision", "INCONNUE")
-                ).upper()
+                
+                # --- DÉBUT DE LA MODIFICATION ---
+                # Récupérer l'action brute, quelle que soit la clé utilisée ("action" ou "decision")
+                action_brute = decision_data.get("action", decision_data.get("decision", "INCONNUE")).upper()
+                
+                # Normaliser l'action pour qu'elle soit compatible avec le nouveau système
+                if action_brute == "ACHETER":
+                    action_normalisee = "LONG"
+                elif action_brute == "VENDRE":
+                    action_normalisee = "SHORT"
+                else:
+                    # Garde les actions déjà au bon format (LONG, SHORT, SURVEILLER)
+                    action_normalisee = action_brute
+                # --- FIN DE LA MODIFICATION ---
+                
                 ticker = decision_data.get("ticker", None)
 
-                if action == "INCONNUE" or not ticker:
+                if action_normalisee in ["INCONNUE", "ERREUR"] or not ticker:
                     continue
 
                 # Créer un identifiant unique basé sur analyzed_at pour éviter les clés dupliquées
@@ -215,11 +190,13 @@ def load_decisions_from_db() -> list[dict[str, Any]]:
                 ]
 
                 # --- ENRICHISSEMENT AVEC DONNÉES DE PERFORMANCE ---
-                prix_decision = get_price_at_decision_time(ticker, analyzed_at)
+                prix_decision = float(decision_data.get("prix_a_la_decision", 0.0))
+                
+                # On récupère le prix actuel pour la comparaison
                 prix_actuel = get_current_price(ticker)
 
                 decision = {
-                    "action": action,
+                    "action": action_normalisee,
                     "ticker": ticker,
                     "unique_id": unique_id,  # Identifiant unique pour éviter les doublons
                     "nom_entreprise": decision_data.get(
@@ -268,7 +245,7 @@ def get_sample_decisions() -> list[dict[str, Any]]:
     """Génère des décisions d'exemple pour la démonstration (avec données de performance)."""
     return [
         {
-            "action": "ACHETER",
+            "action": "LONG",
             "ticker": "AAPL",
             "unique_id": "sample001",
             "nom_entreprise": "Apple Inc.",
@@ -293,7 +270,7 @@ def get_sample_decisions() -> list[dict[str, Any]]:
             "article_link": "https://example.com/apple-ai-news",
         },
         {
-            "action": "VENDRE",
+            "action": "SHORT",
             "ticker": "XOM",
             "unique_id": "sample002",
             "nom_entreprise": "ExxonMobil Corporation",
@@ -345,8 +322,10 @@ def display_decision_card(decision: dict[str, Any]):
     """Affiche une carte de décision 2.1 avec suivi de performance intégré."""
     action = decision["action"]
     color_map = {
-        "ACHETER": "#28a745",
-        "VENDRE": "#dc3545",
+        "LONG": "#28a745",      # Vert pour LONG
+        "SHORT": "#dc3545",     # Rouge pour SHORT
+        "ACHETER": "#28a745",   # Compatibilité avec les anciennes données
+        "VENDRE": "#dc3545",    # Compatibilité avec les anciennes données
         "SURVEILLER": "#ffc107",
         "IGNORER": "#6c757d",
     }
@@ -387,9 +366,11 @@ def display_decision_card(decision: dict[str, Any]):
             else:
                 st.caption("Tendance 7J: Données indisponibles")
 
-        # --- NOUVELLE SECTION : SUIVI DE PERFORMANCE (AVEC CONDITION) ---
-        # On affiche la performance SEULEMENT si on a un prix de décision valide (> 0)
-        if decision["prix_decision"] > 0 and decision["prix_actuel"] > 0:
+        # Affichage conditionnel pour IGNORER/SURVEILLER
+        if action in ["IGNORER", "SURVEILLER"]:
+            st.info(f"Raison de la surveillance : {decision['justification']}")
+        else:
+            # --- SECTION ROBUSTE : SUIVI DE PERFORMANCE ---
             st.markdown("---")
             st.markdown(
                 '<div class="key-indicator-title" style="text-align:left; margin-bottom: 0.5rem;">📊 Suivi de la Position</div>',
@@ -397,33 +378,36 @@ def display_decision_card(decision: dict[str, Any]):
             )
 
             perf_cols = st.columns(3)
-
-            # Calcul de la performance
-            perf_pct = 0
-            if decision["action"] == "ACHETER":
-                perf_pct = (
-                    (decision["prix_actuel"] - decision["prix_decision"])
-                    / decision["prix_decision"]
-                ) * 100
-            elif decision["action"] == "VENDRE":  # Vente à découvert
-                perf_pct = (
-                    (decision["prix_decision"] - decision["prix_actuel"])
-                    / decision["prix_decision"]
-                ) * 100
-
+            prix_decision = decision.get("prix_decision", 0.0)
+            prix_actuel = decision.get("prix_actuel", 0.0)
+            # Affichage du Prix à la Décision
             with perf_cols[0]:
-                st.metric("Prix à la décision", f"{decision['prix_decision']:.2f} $")
+                if prix_decision > 0:
+                    st.metric("Prix à la décision", f"{prix_decision:.2f} $")
+                else:
+                    st.metric("Prix à la décision", "N/A", help="Le prix n'a pas pu être capturé au moment de la décision.")
+            # Affichage du Prix Actuel
             with perf_cols[1]:
-                st.metric("Prix actuel", f"{decision['prix_actuel']:.2f} $")
+                if prix_actuel > 0:
+                    st.metric("Prix actuel", f"{prix_actuel:.2f} $")
+                else:
+                    st.metric("Prix actuel", "N/A", help="Le prix actuel est indisponible (marché fermé ou ticker invalide).")
+            # Affichage de la Performance (conditionnel)
             with perf_cols[2]:
-                # On remplace le conteneur de performance par une métrique standard pour un meilleur alignement
-                st.metric(
-                    "Performance",
-                    f"{perf_pct:+.2f}%",
-                    delta_color="normal" if perf_pct >= 0 else "inverse",
-                )
-
-        st.markdown("---")
+                if prix_decision > 0 and prix_actuel > 0:
+                    perf_pct = 0
+                    if decision["action"] == "LONG":
+                        perf_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+                    elif decision["action"] == "SHORT":
+                        perf_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+                    st.metric(
+                        "Performance",
+                        f"{perf_pct:+.2f}%",
+                        delta_color="normal" if perf_pct >= 0 else "inverse",
+                    )
+                else:
+                    st.metric("Performance", "N/A", help="Calcul impossible sans les deux prix.")
+            st.markdown("---")
         # --- FIN DE LA SECTION MODIFIÉE ---
 
         # === INDICATEURS CLÉS ===
@@ -476,11 +460,168 @@ def display_decision_card(decision: dict[str, Any]):
                 st.markdown("⚠️ **Risques & Points Négatifs**")
                 for point in decision["points_negatifs"]:
                     st.write(f"• {point}")
-            if decision["action"] == "ACHETER":
+            if decision["action"] == "LONG":
                 st.info(
                     f"💡 Allocation Suggérée: {decision['allocation_pct']}% du capital de trading."
                 )
             st.link_button("Consulter l'article original ↗", decision["article_link"])
+
+
+def display_decision_feed():
+    """Affiche le flux de décisions avec suivi de performance."""
+    # === BARRE DE STATUT ===
+    stat_col1, stat_col2, stat_col3 = st.columns(3)
+
+    # Charger les décisions
+    decisions = load_decisions_from_db()
+
+    # Si pas de données réelles, utiliser les exemples
+    if not decisions:
+        st.warning("🔄 Aucune décision récente dans la base. Affichage des exemples.")
+        decisions = get_sample_decisions()
+
+    # Calculs pour les statistiques
+    now = datetime.now()
+    decisions_24h = len(
+        [
+            d
+            for d in decisions
+            if datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
+            > now - timedelta(hours=24)
+        ]
+    )
+    # Compter les signaux LONG des dernières 24h
+    longs_24h = len(
+        [
+            d
+            for d in decisions
+            if d["action"] == "LONG"
+            and datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
+            > now - timedelta(hours=24)
+        ]
+    )
+
+    with stat_col1:
+        st.metric("Statut Système", "🟢 Opérationnel")
+
+    with stat_col2:
+        st.metric("Décisions 24h", decisions_24h)
+
+    with stat_col3:
+        st.metric("Signaux LONG 24h", longs_24h)
+
+    st.markdown("---")
+
+    # === FLUX PRINCIPAL ===
+    if decisions:
+        st.markdown("### 📈 Flux de Décisions avec Suivi de Performance")
+
+        for decision in decisions:
+            display_decision_card(decision)
+            st.markdown("")  # Espace entre les cartes
+    else:
+        st.info("📊 Aucune décision à afficher pour le moment.")
+        st.markdown(
+            "Lancez le monitoring pour commencer à générer des décisions : `python start_realtime_monitor.py`"
+        )
+
+
+def display_active_portfolio():
+    """Affiche le portefeuille actif avec KPIs et tableau détaillé."""
+    st.header("📊 Suivi du Portefeuille Actif")
+    
+    decisions = load_decisions_from_db()
+    
+    # --- VÉRIFICATION CLÉ ---
+    # Ce filtrage fonctionnera maintenant grâce à la normalisation faite en Phase 1
+    active_positions = [d for d in decisions if d['action'] in ['LONG', 'SHORT']]
+    # --- FIN DE LA VÉRIFICATION ---
+
+    if not active_positions:
+        st.warning("ℹ️ Aucune position LONG ou SHORT n'a été trouvée dans les décisions récentes.")
+        st.write("Le portefeuille actif s'affichera ici dès que de nouvelles positions de trading seront prises par l'IA.")
+        return
+    
+    # Calculer les KPIs globaux
+    total_pnl_pct = 0
+    winning_trades = 0
+    
+    for pos in active_positions:
+        prix_decision = pos.get("prix_decision", 0.0)
+        prix_actuel = pos.get("prix_actuel", 0.0)
+        pnl_pct = 0
+        if prix_decision > 0 and prix_actuel > 0:
+            if pos['action'] == 'LONG':
+                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+            elif pos['action'] == 'SHORT':
+                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+        
+        if pnl_pct > 0:
+            winning_trades += 1
+        total_pnl_pct += pnl_pct
+
+    avg_pnl = total_pnl_pct / len(active_positions)
+    win_rate = (winning_trades / len(active_positions)) * 100
+    
+    # Afficher les KPIs
+    kpi_cols = st.columns(4)
+    with kpi_cols[0]:
+        st.metric("Positions Ouvertes", len(active_positions))
+    with kpi_cols[1]:
+        long_count = len([p for p in active_positions if p['action'] == 'LONG'])
+        st.metric("Positions LONG", long_count)
+    with kpi_cols[2]:
+        short_count = len([p for p in active_positions if p['action'] == 'SHORT'])
+        st.metric("Positions SHORT", short_count)
+    with kpi_cols[3]:
+        st.metric("Taux de Réussite", f"{win_rate:.1f}%")
+        
+    st.markdown("---")
+    
+    # Tableau détaillé des positions
+    st.subheader("Détail des Positions")
+    
+    # Créer les en-têtes du tableau
+    header_cols = st.columns([1, 1, 2, 1.5, 1.5, 1.5])
+    headers = ["Ticker", "Direction", "Date Entrée", "Prix Entrée", "Prix Actuel", "Performance (%)"]
+    for col, header in zip(header_cols, headers):
+        col.markdown(f"**{header}**")
+
+    # Mapping des couleurs
+    color_map = {
+        "LONG": "#28a745",
+        "SHORT": "#dc3545",
+        "SURVEILLER": "#ffc107",
+        "IGNORER": "#6c757d",
+    }
+
+    # Afficher chaque position
+    for pos in active_positions:
+        prix_decision = pos.get("prix_decision", 0.0)
+        prix_actuel = pos.get("prix_actuel", 0.0)
+        pnl_pct = 0
+        
+        if prix_decision > 0 and prix_actuel > 0:
+            if pos['action'] == 'LONG':
+                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+            elif pos['action'] == 'SHORT':
+                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+
+        color = "green" if pnl_pct >= 0 else "red"
+        
+        row_cols = st.columns([1, 1, 2, 1.5, 1.5, 1.5])
+        row_cols[0].text(pos['ticker'])
+        row_cols[1].markdown(f"**<font color='{color_map[pos['action']]}'>{pos['action']}</font>**", unsafe_allow_html=True)
+        analyzed_dt = datetime.fromisoformat(pos["analyzed_at"].replace("Z", "+00:00"))
+        row_cols[2].text(analyzed_dt.strftime('%d/%m/%y %H:%M'))
+        row_cols[3].text(f"{prix_decision:.2f} $")
+        row_cols[4].text(f"{prix_actuel:.2f} $")
+        row_cols[5].markdown(f"**<font color='{color}'>{pnl_pct:+.2f}%</font>**", unsafe_allow_html=True)
+        
+        # Ajouter un expander pour les détails du signal original
+        with st.expander(f"Voir détails pour {pos['ticker']}"):
+            st.write(f"**Signal original :** {pos['news_title']}")
+            st.write(f"**Justification IA :** {pos['justification']}")
 
 
 def main():
@@ -555,63 +696,31 @@ def main():
     )
 
     # === EN-TÊTE ===
-    st.title("⚡ BERZERK - Decision Feed")
+    st.title("⚡ BERZERK - Centre de Commandement Trading")
     st.caption("Analyse IA. Décisions Immédiates. Suivi de Performance Temps Réel.")
 
-    # === BARRE DE STATUT ===
-    stat_col1, stat_col2, stat_col3 = st.columns(3)
+    # Création des deux onglets principaux
+    tab1, tab2 = st.tabs(["⚡ Flux de Décisions", "📊 Portefeuille Actif"])
 
-    # Charger les décisions
-    decisions = load_decisions_from_db()
+    with tab1:
+        display_decision_feed()
 
-    # Si pas de données réelles, utiliser les exemples
-    if not decisions:
-        st.warning("🔄 Aucune décision récente dans la base. Affichage des exemples.")
-        decisions = get_sample_decisions()
+    with tab2:
+        display_active_portfolio()
+    
+    # Rafraîchissement automatique natif Python - Solution robuste
+    from streamlit_autorefresh import st_autorefresh
 
-    # Calculs pour les statistiques
-    now = datetime.now()
-    decisions_24h = len(
-        [
-            d
-            for d in decisions
-            if datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
-            > now - timedelta(hours=24)
-        ]
-    )
-    achats_24h = len(
-        [
-            d
-            for d in decisions
-            if d["action"] == "ACHETER"
-            and datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
-            > now - timedelta(hours=24)
-        ]
-    )
+    # Configure le composant pour rafraîchir la page toutes les 60 secondes (60000 millisecondes)
+    # On peut aussi ajouter un compteur visuel si on le souhaite.
+    st_autorefresh(interval=60 * 1000, key="price_refresher")
 
-    with stat_col1:
-        st.metric("Statut Système", "🟢 Opérationnel")
-
-    with stat_col2:
-        st.metric("Décisions 24h", decisions_24h)
-
-    with stat_col3:
-        st.metric("Signaux ACHAT 24h", achats_24h)
-
-    st.markdown("---")
-
-    # === FLUX PRINCIPAL ===
-    if decisions:
-        st.markdown("### 📈 Flux de Décisions avec Suivi de Performance")
-
-        for decision in decisions:
-            display_decision_card(decision)
-            st.markdown("")  # Espace entre les cartes
-    else:
-        st.info("📊 Aucune décision à afficher pour le moment.")
-        st.markdown(
-            "Lancez le monitoring pour commencer à générer des décisions : `python start_realtime_monitor.py`"
-        )
+    # Ajouter un indicateur visuel pour l'utilisateur
+    st.markdown("""
+        <div style="position: fixed; bottom: 10px; right: 15px; padding: 6px 12px; background: rgba(0, 0, 0, 0.6); color: white; border-radius: 8px; font-family: monospace; font-size: 12px; z-index: 9999;">
+            Auto-Refresh: 60s
+        </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

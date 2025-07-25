@@ -41,9 +41,9 @@ The content is organized as follows:
 
 <directory_structure>
 .github/workflows/ci.yml
-.github/workflows/deploy.yml
 .gitignore
 agents.py
+audit_decisions.csv
 backtester.py
 berzerk_dashboard_old.py
 berzerk_dashboard.py
@@ -52,6 +52,7 @@ deployment/berzerk-monitor.service
 deployment/README.md
 diagnostic_db.py
 env.example
+export_decisions_audit.py
 orchestrator.py
 pyproject.toml
 pytest.ini
@@ -71,108 +72,95 @@ tests/unit/test_agents.py
 <files>
 This section contains the contents of the repository's files.
 
-<file path=".github/workflows/ci.yml">
-name: BERZERK - Test, Lint & Format
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  validate-code:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11"]
-
-    steps:
-    - name: 1. Checkout du code
-      uses: actions/checkout@v4
-
-    - name: 2. Mise en place de Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
-
-    - name: 3. Installation des dépendances
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-mock black ruff
-
-    - name: 4. Création du fichier .env pour la CI
-      # IMPORTANT: Ces variables doivent être configurées dans le repo GitHub
-      # Settings > Secrets and variables > Actions > Variables (PAS Secrets)
-      run: |
-        echo "GOOGLE_API_KEY=${{ vars.GOOGLE_API_KEY }}" >> .env
-        echo "TAVILY_API_KEY=${{ vars.TAVILY_API_KEY }}" >> .env
-        echo "CI_ENV=true" >> .env # Variable pour indiquer qu'on est en CI
-
-    - name: 5. Vérification du formatage avec Black
-      run: black --check .
-
-    - name: 6. Linting avec Ruff
-      run: ruff check .
-
-    - name: 7. Exécution des tests avec Pytest
-      run: pytest
+<file path="audit_decisions.csv">
+analyzed_at,ticker,prix_a_la_decision,decision
+2025-07-25T14:07:08.708934,,,
+2025-07-25T14:07:04.384920,,,
+2025-07-25T14:06:57.076700,,,
+2025-07-25T14:06:49.657918,,,
+2025-07-25T14:06:39.809284,,,
+2025-07-25T14:06:33.450094,,,
+2025-07-25T14:06:27.593570,,,
+2025-07-25T14:06:21.352531,AIR.PA,,
+2025-07-25T14:06:14.870976,,,
+2025-07-25T14:06:11.182188,,,
+2025-07-25T14:06:02.655201,MC.PA,,
+2025-07-25T14:05:58.735314,,,
+2025-07-25T14:05:50.952327,,,
+2025-07-25T14:05:43.779222,ROG.SW,,
+2025-07-25T14:05:31.763361,,,
+2025-07-25T14:05:24.884193,,,
+2025-07-25T14:05:18.018849,,,
+2025-07-25T14:05:10.328788,DHT,,
+2025-07-25T14:04:51.995248,,,
+2025-07-25T14:04:45.419439,,,
 </file>
 
-<file path=".github/workflows/deploy.yml">
-name: BERZERK - Deploy to Production
+<file path="export_decisions_audit.py">
+import sqlite3
+import json
+import csv
+from pathlib import Path
 
-on:
-  push:
-    branches: [ main ]
+DB_PATH = "berzerk.db"
+EXPORT_CSV = True  # Passe à False si tu ne veux pas de CSV
+CSV_PATH = "audit_decisions.csv"
 
-jobs:
-  deploy:
-    # Ce job ne s'exécutera que si le workflow de CI a réussi
-    needs: validate-code
-    runs-on: ubuntu-latest
-    
-    # S'assure que le déclencheur est bien un push, et non une pull request
-    if: github.event_name == 'push'
 
-    steps:
-    - name: 1. Checkout du code
-      uses: actions/checkout@v4
+def extract_decisions(limit=50):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT analyzed_at, decision_json
+        FROM articles
+        WHERE decision_json IS NOT NULL
+        ORDER BY analyzed_at DESC
+        LIMIT ?
+        """,
+        (limit,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    results = []
+    for analyzed_at, decision_json in rows:
+        try:
+            data = json.loads(decision_json)
+            prix = data.get("prix_a_la_decision", None)
+            ticker = data.get("ticker", None)
+            decision = data.get("decision", None)
+            results.append({
+                "analyzed_at": analyzed_at,
+                "ticker": ticker,
+                "prix_a_la_decision": prix,
+                "decision": decision,
+            })
+        except Exception as e:
+            print(f"[WARN] Erreur parsing JSON: {e}")
+    return results
 
-    - name: 2. Déploiement sur le serveur de production via SSH
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.PROD_HOST }}
-        username: ${{ secrets.PROD_USERNAME }}
-        key: ${{ secrets.PROD_SSH_KEY }}
-        port: 22
-        script: |
-          # Commandes à exécuter sur le serveur distant
-          # Naviguer vers le répertoire de l'application
-          cd /home/berzerk/app 
 
-          # Mettre à jour le code depuis la branche main
-          echo ">>> Mise à jour du code depuis Git..."
-          git pull origin main
+def print_decisions(decisions):
+    print(f"{'Date/Heure':<22} | {'Ticker':<8} | {'Prix à la décision':<18} | {'Décision':<10}")
+    print("-" * 65)
+    for d in decisions:
+        print(f"{d['analyzed_at']:<22} | {d['ticker'] or 'N/A':<8} | {d['prix_a_la_decision'] or 'N/A':<18} | {d['decision'] or 'N/A':<10}")
 
-          # Activer l'environnement virtuel
-          echo ">>> Activation de l'environnement virtuel..."
-          source venv/bin/activate
-          
-          # Mettre à jour les dépendances Python
-          echo ">>> Installation des dépendances..."
-          pip install -r requirements.txt
-          
-          # Redémarrer le service de monitoring pour appliquer les changements
-          echo ">>> Redémarrage du service de monitoring..."
-          sudo systemctl restart berzerk-monitor
-          
-          # Optionnel : Redémarrer le service du dashboard s'il tourne aussi sur le serveur
-          # sudo systemctl restart berzerk-dashboard
 
-          echo ">>> Déploiement terminé avec succès !"
+def export_csv(decisions, path):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["analyzed_at", "ticker", "prix_a_la_decision", "decision"])
+        writer.writeheader()
+        for d in decisions:
+            writer.writerow(d)
+    print(f"Export CSV terminé : {path}")
+
+
+if __name__ == "__main__":
+    decisions = extract_decisions()
+    print_decisions(decisions)
+    if EXPORT_CSV:
+        export_csv(decisions, CSV_PATH)
 </file>
 
 <file path="deployment/berzerk-monitor.service">
@@ -287,80 +275,6 @@ GOOGLE_API_KEY="votre_clé_ici"
 
 # Clé API pour Tavily Search
 TAVILY_API_KEY="votre_clé_ici"
-</file>
-
-<file path="pyproject.toml">
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | venv
-  | _build
-  | buck-out
-  | build
-  | dist
-)/
-'''
-
-[tool.ruff]
-# Même longueur de ligne que Black
-line-length = 88
-target-version = "py311"
-
-# Fichiers à exclure
-exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "venv",
-]
-
-[tool.ruff.lint]
-# Règles à activer
-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-]
-
-# Règles à ignorer
-ignore = [
-    "E501", # line too long, géré par Black
-    "B008", # do not perform function calls in argument defaults
-    "C901", # too complex
-]
-
-[tool.ruff.lint.mccabe]
-max-complexity = 10
 </file>
 
 <file path="pytest.ini">
@@ -657,6 +571,88 @@ def test_get_agent_description():
     assert description_unknown == "Agent non reconnu"
 </file>
 
+<file path=".github/workflows/ci.yml">
+name: BERZERK - CI & CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # --- JOB 1: Validation du code ---
+  validate-code:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Mise en place de Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: 3. Installation des dépendances
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-mock black ruff
+
+    - name: 4. Création du fichier .env pour la CI
+      run: |
+        echo "GOOGLE_API_KEY=${{ vars.GOOGLE_API_KEY }}" >> .env
+        echo "TAVILY_API_KEY=${{ vars.TAVILY_API_KEY }}" >> .env
+        echo "CI_ENV=true" >> .env
+
+    - name: 5. Vérification du formatage avec Black
+      run: black --check .
+
+    - name: 6. Linting avec Ruff
+      run: ruff check .
+
+    - name: 7. Exécution des tests avec Pytest
+      run: pytest
+
+  # --- JOB 2: Déploiement (uniquement si la validation réussit) ---
+  deploy-to-prod:
+    # 'needs' garantit que ce job ne se lance que si 'validate-code' a réussi
+    needs: validate-code
+    runs-on: ubuntu-latest
+    
+    # 'if' garantit que ce job ne se lance que pour un push sur main,
+    # et pas pour une pull request.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Déploiement sur le serveur de production via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        script: |
+          cd /home/berzerk/app 
+          echo ">>> Mise à jour du code depuis Git..."
+          git pull origin main
+          echo ">>> Activation de l'environnement virtuel..."
+          source venv/bin/activate
+          echo ">>> Installation des dépendances..."
+          pip install -r requirements.txt
+          echo ">>> Redémarrage du service de monitoring..."
+          sudo systemctl restart berzerk-monitor
+          echo ">>> Déploiement terminé avec succès !"
+</file>
+
 <file path=".gitignore">
 # YoYo AI version control directory
 .yoyo/
@@ -703,6 +699,134 @@ logs/
 # Temporary files
 *.tmp
 *.temp" > .gitignore
+</file>
+
+<file path="pyproject.toml">
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+# Même longueur de ligne que Black
+line-length = 88
+target-version = "py311"
+
+# Fichiers à exclure
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+[tool.ruff.lint]
+# Règles à activer
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+# Règles à ignorer
+ignore = [
+    "E501", # line too long, géré par Black
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+</file>
+
+<file path="test_feeds.py">
+import feedparser
+import requests
+
+# Définition des flux RSS à tester
+RSS_FEEDS = {"Bloomberg": "https://feeds.bloomberg.com/markets/news.rss"}
+
+print("--- Lancement du diagnostic des flux RSS ---")
+
+# On boucle sur chaque flux pour le tester individuellement
+for source, url in RSS_FEEDS.items():
+    print(f"\n[TEST] Source : {source}")
+    print(f"       URL    : {url}")
+
+    try:
+        # On simule un navigateur en ajoutant un User-Agent
+        # C'est la correction la plus probable
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        # On télécharge d'abord le contenu avec requests, qui permet de passer les headers
+        response = requests.get(url, headers=headers, timeout=10)
+
+        # On vérifie le code de statut HTTP. 200 = OK. 403 = Interdit. 404 = Non trouvé.
+        print(f"       Statut HTTP : {response.status_code}")
+
+        if response.status_code == 200:
+            # Si la requête a réussi, on donne le contenu à feedparser
+            feed = feedparser.parse(response.content)
+
+            # On vérifie si feedparser a bien trouvé des articles
+            if feed.entries:
+                print(f"       ✅ SUCCÈS : {len(feed.entries)} article(s) trouvé(s).")
+            elif feed.bozo:
+                # feed.bozo = 1 signifie que le flux est mal formé
+                print(
+                    f"       ⚠️ AVERTISSEMENT : Le flux est mal formé. Erreur : {feed.bozo_exception}"
+                )
+            else:
+                print(
+                    "       ⚠️ AVERTISSEMENT : Le flux est valide mais ne contient aucun article."
+                )
+        else:
+            print(
+                f"       ❌ ÉCHEC : Le serveur a refusé la connexion (Code {response.status_code}). Le flux est probablement protégé ou mort."
+            )
+
+    except Exception as e:
+        print(f"       ❌ ERREUR : Impossible de se connecter au flux. Erreur : {e}")
+
+print("\n--- Diagnostic terminé ---")
 </file>
 
 <file path="backtester.py">
@@ -779,8 +903,8 @@ class BerzerkBacktester:
                 # Nouveau format : chercher dans 'action'
                 action = decision.get("action", "").upper()
 
-                # Vérifier si c'est une décision d'ACHAT
-                if action in ["ACHETER", "ACHAT", "BUY"]:
+                # Vérifier si c'est une décision d'ACHAT/LONG
+                if action in ["LONG", "ACHETER", "ACHAT", "BUY"]:
                     ticker = decision.get("ticker")
 
                     if ticker:  # Seulement si on a un ticker valide
@@ -802,10 +926,10 @@ class BerzerkBacktester:
                             }
                         )
                         print(
-                            f"✅ Décision d'ACHAT trouvée: {ticker} ({title[:30]}...)"
+                            f"✅ Décision LONG/ACHAT trouvée: {ticker} ({title[:30]}...)"
                         )
                     else:
-                        print(f"⚠️  Décision d'ACHAT sans ticker: {title[:30]}...")
+                        print(f"⚠️  Décision LONG/ACHAT sans ticker: {title[:30]}...")
                 else:
                     print(f"📊 Décision {action}: {title[:30]}...")
 
@@ -814,7 +938,7 @@ class BerzerkBacktester:
             except Exception as e:
                 print(f"❌ Erreur lors du traitement de l'article {article_id}: {e}")
 
-        print(f"\n📈 {len(buy_decisions)} décision(s) d'ACHAT trouvée(s)")
+        print(f"\n📈 {len(buy_decisions)} décision(s) LONG/ACHAT trouvée(s)")
         return buy_decisions
 
     def get_next_trading_day(self, date: datetime) -> datetime:
@@ -1142,12 +1266,12 @@ def main():
 
     # Vérifier les prérequis
     import importlib.util
-    
+
     missing_modules = []
     for module in ["pandas", "yfinance"]:
         if importlib.util.find_spec(module) is None:
             missing_modules.append(module)
-    
+
     if missing_modules:
         print(f"❌ Erreur : Modules manquants {missing_modules}")
         print("💡 Installez les dépendances : pip install yfinance pandas")
@@ -2552,7 +2676,7 @@ def diagnostic_db():
     print(f"\n🔍 Échantillon de {len(decisions)} décisions:")
     print("-" * 60)
 
-    achat_count = 0
+    long_count = 0
     for article_id, title, decision_json in decisions:
         print(f"\n📰 Article {article_id}: {title[:50]}...")
         try:
@@ -2566,9 +2690,9 @@ def diagnostic_db():
                 print(f"   🎯 Action: {action}")
                 print(f"   📈 Ticker: {ticker}")
 
-                if action and action.upper() == "ACHETER":
-                    achat_count += 1
-                    print("   ✅ DÉCISION D'ACHAT TROUVÉE!")
+                if action and action.upper() in ["LONG", "ACHETER"]:  # Compatibilité avec anciennes données
+                    long_count += 1
+                    print("   ✅ DÉCISION LONG/ACHAT TROUVÉE!")
 
             else:
                 print(f"   ⚠️  Format inattendu: {type(decision)}")
@@ -2576,7 +2700,7 @@ def diagnostic_db():
         except json.JSONDecodeError as e:
             print(f"   ❌ Erreur JSON: {e}")
 
-    print(f"\n📈 Résumé: {achat_count} décision(s) d'ACHAT trouvée(s)")
+    print(f"\n📈 Résumé: {long_count} décision(s) LONG/ACHAT trouvée(s)")
 
     conn.close()
 
@@ -2884,9 +3008,9 @@ class RealTimeRSSMonitor:
                 decision = result["final_decision"]
                 action = decision.get("decision", "INCONNU")
 
-                if action == "ACHETER":
+                if action in ["LONG", "ACHETER"]:  # Compatibilité avec anciennes données
                     self.log(
-                        f"🚀 ACHAT IDENTIFIÉ: {article['title'][:50]}...", "SUCCESS"
+                        f"🚀 SIGNAL LONG IDENTIFIÉ: {article['title'][:50]}...", "SUCCESS"
                     )
                     ticker = decision.get("ticker_cible", "N/A")
                     allocation = decision.get("allocation_pourcentage", 0)
@@ -3049,6 +3173,7 @@ if __name__ == "__main__":
 <file path="requirements.txt">
 # Core dependencies
 streamlit>=1.30.0
+streamlit-autorefresh>=1.0.1
 langchain>=0.1.0
 langchain-google-genai>=0.0.6
 langchain-core>=0.1.0
@@ -3079,7 +3204,8 @@ typing-extensions>=4.8.0
 pytest>=7.0.0
 pytest-mock>=3.12.0
 black>=23.0.0
-ruff>=0.1.0
+ruff>=0.1.0 
+langchain_community
 </file>
 
 <file path="reset_and_analyze.py">
@@ -3134,7 +3260,7 @@ def reset_analyses():
     return pending
 
 
-def get_latest_articles(limit=20):
+def get_latest_articles(limit=10):
     """
     Récupère les derniers articles en attente
     """
@@ -3513,834 +3639,47 @@ if __name__ == "__main__":
     main()
 </file>
 
-<file path="test_feeds.py">
-import feedparser
-import requests
-
-# Définition des flux RSS à tester
-RSS_FEEDS = {"Bloomberg": "https://feeds.bloomberg.com/markets/news.rss"}
-
-print("--- Lancement du diagnostic des flux RSS ---")
-
-# On boucle sur chaque flux pour le tester individuellement
-for source, url in RSS_FEEDS.items():
-    print(f"\n[TEST] Source : {source}")
-    print(f"       URL    : {url}")
-
-    try:
-        # On simule un navigateur en ajoutant un User-Agent
-        # C'est la correction la plus probable
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-
-        # On télécharge d'abord le contenu avec requests, qui permet de passer les headers
-        response = requests.get(url, headers=headers, timeout=10)
-
-        # On vérifie le code de statut HTTP. 200 = OK. 403 = Interdit. 404 = Non trouvé.
-        print(f"       Statut HTTP : {response.status_code}")
-
-        if response.status_code == 200:
-            # Si la requête a réussi, on donne le contenu à feedparser
-            feed = feedparser.parse(response.content)
-
-            # On vérifie si feedparser a bien trouvé des articles
-            if feed.entries:
-                print(f"       ✅ SUCCÈS : {len(feed.entries)} article(s) trouvé(s).")
-            elif feed.bozo:
-                # feed.bozo = 1 signifie que le flux est mal formé
-                print(
-                    f"       ⚠️ AVERTISSEMENT : Le flux est mal formé. Erreur : {feed.bozo_exception}"
-                )
-            else:
-                print(
-                    "       ⚠️ AVERTISSEMENT : Le flux est valide mais ne contient aucun article."
-                )
-        else:
-            print(
-                f"       ❌ ÉCHEC : Le serveur a refusé la connexion (Code {response.status_code}). Le flux est probablement protégé ou mort."
-            )
-
-    except Exception as e:
-        print(f"       ❌ ERREUR : Impossible de se connecter au flux. Erreur : {e}")
-
-print("\n--- Diagnostic terminé ---")
-</file>
-
 <file path="suivi_projet.md">
-# 📋 Suivi du Projet BERZERK
-
-## 📖 Description Générale
-**Objectif :** Développer un système d'analyse automatisée d'actualités financières utilisant l'IA pour évaluer l'impact des news sur les marchés.
-
-**Public cible :** Analystes financiers et investisseurs cherchant une aide à la décision rapide et fiable.
-
-**Architecture :** Application Streamlit + LangChain + Gemini AI + Base de données SQLite
-
-## 📋 Plan de Tâches
-
-### Phase 1 : Fondations 
-- [x] Configuration LangChain + Gemini
-- [x] Interface Streamlit basique
-- [x] Récupération flux RSS
-- [x] Analyse LLM des articles
-- [x] Intégration base de données SQLite
-
-### Phase 2 : Agents IA Spécialisés ✅
-- [x] Création module agents.py
-- [x] Intégration agents dans interface principale
-- [x] Agent Investisseur Final (Superviseur)
-- [x] Pipeline automatisé avec LangGraph
-
-### Phase 2.3 : Automatisation Complète ✅
-- [x] Création orchestrator.py avec LangGraph
-- [x] Tests du pipeline automatisé
-- [x] Transformation du labo en moniteur temps réel
-
-### Phase 3 : Architecture Service 24/7 ✅
-- [x] Extension base de données avec colonnes de suivi
-- [x] Service daemon berzerk_service.py
-- [x] Surveillance automatique 24/7
-- [x] Dashboard temps réel berzerk_dashboard.py
-- [x] Séparation backend/frontend
-
-### Phase 4 : Améliorations Avancées (à venir)
-- [ ] Filtrage avancé des articles
-- [ ] Visualisations des tendances
-- [ ] Export des résultats
-- [ ] API REST pour intégrations externes
-
-### Phase 5 : Surveillance RSS Temps Réel ✅
-- [x] Système de surveillance RSS quasi-instantané (30 secondes)
-- [x] Optimisations HTTP (ETags, Last-Modified, codes 304)
-- [x] Threading asynchrone pour analyses parallèles
-- [x] Détection intelligente via hash de contenu
-- [x] Gestion d'erreurs adaptative
-- [x] **CORRECTION CRITIQUE** : Logique de détection des nouveaux articles simplifiée
-
-### Phase 6 : Intégration et Déploiement Continus (CI/CD) ✅
-- [x] Structure de tests et configuration pytest
-- [x] Workflow GitHub Actions pour CI (tests, linting, formatage)
-- [x] Tests unitaires avec mocks pour validation automatique
-- [x] Workflow GitHub Actions pour CD (déploiement automatisé)
-- [x] Scripts de déploiement sur serveur de production
-- [x] Configuration service systemd pour monitoring continu
-
-### Phase 7 : Améliorations Avancées (à venir)
-- [ ] Filtrage avancé des articles
-- [ ] Visualisations des tendances
-- [ ] Export des résultats
-- [ ] API REST pour intégrations externes
-
-## 📝 Journal des Modifications
-
-### 2024-12-29 - Implémentation CI/CD : Intégration et Déploiement Continus ✅
-**Objectif :** Automatiser les tests, la validation et le déploiement pour garantir la qualité et la rapidité des mises à jour.
-
-**Philosophie DevOps :**
-- **Continuous Integration (CI)** : Chaque push déclenche automatiquement des vérifications de qualité et tests
-- **Continuous Deployment (CD)** : Déploiement automatique en production après validation CI réussie
-
-**Composants implémentés :**
-1. ✅ **Préparation de l'environnement** :
-   - Ajout des dépendances de développement (pytest, black, ruff, pytest-mock)
-   - Création de la structure de tests (`tests/unit/`, `tests/integration/`)
-   - Configuration pytest.ini pour standardiser les tests
-
-2. ✅ **Intégration Continue (.github/workflows/ci.yml)** :
-   - Workflow déclenché sur push/PR vers main
-   - Validation formatage avec Black (--check)
-   - Linting avec Ruff pour la qualité du code
-   - Exécution des tests avec Pytest
-   - Support multi-version Python (matrice avec Python 3.11)
-
-3. ✅ **Tests Unitaires** :
-   - Premier test pour `route_to_agents()` avec mocks LLM
-   - Évite les coûts API durant les tests (simulation avec pytest-mock)
-   - Structure extensible pour futurs tests
-
-4. ✅ **Déploiement Continu (.github/workflows/deploy.yml)** :
-   - Workflow déclenché uniquement après succès de la CI
-   - Déploiement SSH automatisé sur serveur de production
-   - Mise à jour Git, dépendances et redémarrage services
-   - Gestion des secrets GitHub pour authentification
-
-**Variables et Secrets requis :**
-- **Variables GitHub** : `GOOGLE_API_KEY`, `TAVILY_API_KEY` (pour CI)
-- **Secrets GitHub** : `PROD_HOST`, `PROD_USERNAME`, `PROD_SSH_KEY` (pour CD)
-
-**Résultats :**
-- **Qualité garantie** : Aucun code non testé ou mal formaté ne peut atteindre main
-- **Déploiement automatisé** : Push → Tests → Déploiement en production
-- **Zéro downtime** : Redémarrage intelligent des services
-- **Évolutivité** : Structure prête pour tests d'intégration et monitoring avancé
-
-### 2024-12-29 - Correction Critique : Logique de Prix et Robustesse yfinance ✅
-**Objectif :** Résoudre les problèmes de prix identiques et d'erreurs yfinance sur tickers mal formatés.
-
-**Diagnostics identifiés :**
-- **Problème Logique** : Le "prix à la décision" et le "prix actuel" étaient identiques car `get_price_at_decision_time()` récupérait simplement le dernier prix disponible (prix actuel)
-- **Problème de Données** : L'IA générait parfois des tickers invalides (avec "$", espaces) causant des erreurs yfinance 404/delisted
-- **Problème d'Affichage** : La performance s'affichait même avec des prix non fiables (0.00 ou identiques)
-
-**Corrections implémentées :**
-1. ✅ **Refonte logique de `get_price_at_decision_time()` - Version Optimisée** :
-   - **Performance** : Utilise uniquement les données journalières (ultra-rapide, 1 seul appel réseau par ticker)
-   - **Logique intelligente** : Prix de clôture du jour de décision OU du jour précédent si marché fermé
-   - **Résout le blocage** : Évite les appels lents `interval="1m"` qui bloquaient `load_decisions_from_db()`
-   - Cache optimisé (24h) car prix historique ne change pas
-   - Nettoyage automatique des tickers (suppression des "$" et espaces)
-
-2. ✅ **Amélioration robustesse `get_current_price()`** :
-   - Nettoyage automatique des tickers avant requête yfinance
-   - Priorité aux données intraday (interval="1m") pour prix plus récent
-   - Fallback robuste sur `regularMarketPrice`
-   - Gestion silencieuse des erreurs sans crash
-
-3. ✅ **Renforcement `get_sparkline_chart()`** :
-   - Même logique de nettoyage des tickers pour cohérence
-   - Gestion d'erreurs améliorée
-
-4. ✅ **Affichage conditionnel de la performance** :
-   - Section "Suivi de la Position" visible UNIQUEMENT si `prix_decision > 0` ET `prix_actuel > 0`
-   - Remplacement du container HTML par `st.metric()` standard pour alignement
-   - Évite l'affichage de performances incorrectes (-100%) ou de 0.00
-
-5. ✅ **Renforcement du Ticker Hunter (agents.py)** :
-   - Règles explicites dans le prompt : tickers = 1-5 lettres majuscules
-   - Interdiction formelle des "$", espaces ou phrases
-   - Réduction anticipée des tickers mal formatés à la source
-
-**Résultats attendus :**
-- **Chargement ultra-rapide** du dashboard (résolution du blocage sur load_decisions_from_db)
-- Prix de décision pertinent = clôture du jour de décision ou jour précédent si marché fermé
-- Affichage **instantané** de la section performance (prix quasi-systématiquement disponible)
-- Réduction drastique des erreurs yfinance pour tickers invalides
-- IA générant des tickers de meilleure qualité
-
-**Tests à effectuer :**
-- Vérifier chargement ultra-rapide du dashboard (plus de blocage)
-- Contrôler prix_decision cohérent (clôture jour de décision ou jour précédent)
-- Vérifier affichage instantané de la section "Suivi de la Position"
-- Tester avec tickers contenant "$" (doivent être nettoyés automatiquement)
-
-### 2024-12-07 - Transformation "Carte de Signal 2.0" ✅
-**Objectif :** Transformer les cartes de décision en interface professionnelle dense et intuitive avec informations contextuelles enrichies.
-
-**Diagnostics identifiés :**
-- Graphiques plats par manque de données et contexte visuel
-- Horizon d'investissement souvent "N/A" ou non fourni par l'IA
-- Absence de contexte métier (secteur d'activité)
-- Densité d'information sous-optimale
-
-**Améliorations implémentées :**
-1. ✅ **Amélioration du Cerveau IA** :
-   - Modification du prompt `investisseur_final_template` pour exiger l'horizon d'investissement
-   - Ajout du champ `horizon` au modèle Pydantic `InvestmentDecision`
-   - Obligation pour l'IA de déduire l'horizon depuis le rapport d'analyse
-
-2. ✅ **Graphiques Dynamiques avec Tendance** :
-   - Refonte `get_sparkline_chart()` avec couleurs selon tendance (vert=haussier, rouge=baissier)
-   - Passage d'intervalle 1h → 1d pour plus de robustesse
-   - Retour de tuple `(fig, trend)` pour affichage de la tendance
-
-3. ✅ **Enrichissement Contextuel** :
-   - Récupération automatique du secteur d'activité via `yfinance`
-   - Intégration dans la carte de décision avec 3 KPI : Force du Signal, Horizon, Secteur
-   - Clé unique pour graphiques Plotly (`key=f"sparkline_{ticker}"`)
-
-4. ✅ **Refonte Interface Compacte** :
-   - Design en-tête intégré avec 3 colonnes : Badge Action, Info/News, Graphique
-   - Suppression de la section "Tableau de Bord du Signal" séparée
-   - Fusion informations essentielles en une ligne d'impact ultra-dense
-   - Graphique sparkline directement dans l'en-tête avec indication de tendance
-
-**Résultats :**
-- Interface professionnelle lisible en 3 secondes
-- Contexte métier immédiat (secteur)
-- Tendance marché visuelle (couleurs dynamiques)
-- Horizon d'investissement systématiquement présent
-- Information dense mais organisée
-
-### 2024-01-XX - Implémentation Base de Données ✅
-**Objectif :** Ajouter une base de données SQLite pour éviter les doublons et améliorer la gestion des articles.
-
-**Modifications effectuées :**
-1. ✅ Ajout des imports `datetime` et `sqlite3`
-2. ✅ Création fonction `init_db()` pour initialiser la base avec table `articles`
-3. ✅ Modification `fetch_news_from_feeds()` → `fetch_and_store_news()` avec INSERT OR IGNORE
-4. ✅ Création `get_articles_from_db()` pour récupérer les articles triés par date DESC
-5. ✅ Amélioration interface Streamlit avec dates de publication formatées
-6. ✅ Ajout notification toast pour nouveaux articles trouvés
-7. ✅ Amélioration affichage avec `st.json()` pour les entités
-
-### 2024-01-XX - Création Module Agents IA ✅
-**Objectif :** Développer une équipe d'agents IA spécialisés pour l'analyse approfondie des news.
-
-**Composants implémentés :**
-1. ✅ **Initialisation LLM** avec température 0.3 pour la personnalité
-2. ✅ **3 Profils d'Agents Spécialisés :**
-   - `analyste_actions` : Analyse d'actions individuelles avec recommandations
-   - `analyste_sectoriel` : Analyse de secteurs et dynamiques concurrentielles
-   - `strategiste_geopolitique` : Analyse géopolitique et macroéconomique
-3. ✅ **Routeur Intelligent** (`route_to_agents()`) avec fallback automatique
-4. ✅ **Exécuteur d'Agent** (`run_agent_analysis()`) avec gestion d'erreurs
-5. ✅ **Fonctions Utilitaires** et module de test intégré
-6. ✅ **Type Hints** complets et documentation détaillée
-
-### 2024-01-XX - Intégration Agents dans Interface Principale ✅
-**Objectif :** Intégrer le système d'agents IA dans l'interface utilisateur de BERZERK Lab.
-
-**Modifications effectuées :**
-1. ✅ **Import du module agents** dans `berzerk_lab.py`
-2. ✅ **Nouvelles variables de session_state** pour gérer l'état des agents
-3. ✅ **Réinitialisation des agents** lors du changement d'article
-4. ✅ **Interface de recrutement** avec bouton "Recruter l'Équipe d'Agents Spécialisés"
-5. ✅ **Affichage de l'équipe** avec focus spécifique de chaque agent
-6. ✅ **Interface d'exécution** avec bouton "Lancer les Analyses de l'Équipe"
-7. ✅ **Affichage des résultats** avec expanders pour chaque analyse d'agent
-8. ✅ **Gestion d'erreurs** et indicateurs de progression optimisés
-9. ✅ **Interface multi-perspectives** complètement fonctionnelle
-
-### 2024-01-XX - Pipeline Automatisé avec LangGraph ✅
-**Objectif :** Créer un système d'orchestration automatisé pour la chaîne complète d'analyse.
-
-**Composants implémentés :**
-1. ✅ **Agent Investisseur Final** ajouté dans `agents.py`
-   - Prend la décision finale ACHETER/VENDRE/SURVEILLER/IGNORER
-   - Calcule l'allocation de capital (% du portefeuille)
-   - Format JSON structuré avec justifications et risques
-2. ✅ **Pipeline LangGraph** dans `orchestrator.py`
-   - Graphe d'états avec 4 nœuds : Analyse → Routage → Exécution → Décision
-   - Gestion d'erreurs robuste à chaque étape
-   - Logs d'exécution détaillés avec timestamps
-3. ✅ **Fonctions d'orchestration** complètes
-   - `run_berzerk_pipeline()` : Point d'entrée principal
-   - `display_final_results()` : Affichage formaté des résultats
-   - Mode test intégré pour validation
-4. ✅ **Types et validation** avec Pydantic
-   - `GraphState` : État typé circulant dans le graphe
-   - `InvestmentDecision` : Validation des décisions finales
-
-### 2024-01-XX - Architecture Service 24/7 ✅
-**Objectif :** Créer un système de surveillance automatique 24/7 avec séparation backend/frontend.
-
-**Architecture finale :**
-```
-🔄 berzerk_service.py  ←  Daemon 24/7
-     ↓ (analyse automatique)
-🗄️ berzerk.db         ←  Base de données centralisée  
-     ↑ (lecture seule)
-📊 berzerk_dashboard.py ←  Dashboard Streamlit
-```
-
-**Composants implémentés :**
-1. ✅ **Extension Base de Données**
-   - Colonnes `status`, `decision_json`, `analyzed_at` ajoutées
-   - Gestion des migrations automatiques
-   - Suivi complet du cycle de vie des articles
-2. ✅ **Service Daemon** (`berzerk_service.py`)
-   - Surveillance continue des flux RSS (intervalle configurable)
-   - Détection automatique des nouvelles news
-   - Analyse automatique via les agents IA
-   - Gestion d'erreurs robuste et logs détaillés
-3. ✅ **Dashboard Temps Réel** (`berzerk_dashboard.py`)
-   - Interface séparée pour visualisation
-   - Statistiques globales et métriques
-   - Filtres avancés (statut, action, période)
-   - Auto-refresh optionnel
-   - Pagination et affichage optimisé
-
-## 🐛 Suivi des Erreurs
-*Aucune erreur critique identifiée pour le moment*
-
-## ✅ Résultats des Tests
-*Tests à effectuer après implémentation de la base de données*
-
-## 📚 Documentation Consultée
-- [LangChain Documentation](https://python.langchain.com/docs/)
-- [Streamlit Documentation](https://docs.streamlit.io/)
-- [SQLite Documentation](https://docs.python.org/3/library/sqlite3.html)
-- [Feedparser Documentation](https://feedparser.readthedocs.io/)
-
-## 🏗️ Structure du Projet
-```
-Berzerk/
-├── berzerk_lab.py          # Interface Streamlit originale (Phases 1-2)
-├── berzerk_service.py      # Service daemon surveillance 24/7 (Phase 3)
-├── berzerk_dashboard.py    # Dashboard temps réel (Phase 3)
-├── agents.py               # Agents IA spécialisés + Investisseur Final
-├── orchestrator.py         # Pipeline automatisé LangGraph (Phase 2.3)
-├── test_feeds.py           # Tests des flux RSS
-├── suivi_projet.md         # Documentation du projet
-├── berzerk.db              # Base de données SQLite (créé automatiquement)
-├── venv/                   # Environnement virtuel
-└── .env                    # Variables d'environnement
-```
-
-### 📋 Modes d'Utilisation
-1. **Mode Interactif** : `streamlit run berzerk_lab.py` (Phases 1-2)
-2. **Mode Service** : `python berzerk_service.py [interval]` (Phase 3)
-3. **Mode Dashboard** : `streamlit run berzerk_dashboard.py` (Phase 3)
-4. **Mode Pipeline** : `python orchestrator.py <URL> <CAPITAL>` (Phase 2.3)
-
-## 🤔 Réflexions & Décisions
-
-### Décision Architecture Base de Données
-**Problème :** Articles dupliqués et pas de tri chronologique
-**Solution choisie :** SQLite avec contrainte UNIQUE sur les liens
-**Justification :** Simple, léger, intégré Python, parfait pour ce volume de données
-
-### Contraintes Techniques
-- **Gemini API :** Limitation de tokens par requête
-- **RSS Feeds :** Certains flux peuvent être instables
-- **Parsing HTML :** Variabilité des structures selon les sources
-
-## 📊 Métriques de Succès
-
-### Phase 1-2 : Analyse Interactive ✅
-- [x] Zéro doublon d'article (contrainte UNIQUE sur les liens)
-- [x] Tri chronologique fonctionnel (ORDER BY published_date DESC)
-- [x] Persistence des données entre sessions (SQLite + init_db())
-- [x] Temps de réponse < 5 secondes pour l'analyse (LangChain optimisé)
-
-### Phase 3 : Architecture Service 24/7 ✅
-- [x] Surveillance automatique continue (daemon stable)
-- [x] Détection temps réel des nouvelles news
-- [x] Analyse automatique sans intervention humaine
-- [x] Séparation backend/frontend fonctionnelle
-- [x] Dashboard temps réel avec filtres avancés
-- [x] Gestion d'erreurs robuste et logs détaillés
-
-### Phase 4 : Agent "Ticker Hunter" ✅
-- [x] Transformation révolutionnaire du pipeline vers le trading ciblé
-- [x] Identification automatique de 1-5 tickers actionnables par news
-- [x] Routage intelligent basé sur les tickers identifiés
-- [x] Service daemon optimisé avec prise de décision orientée tickers
-- [x] Passage de "SURVEILLER" systématique à décisions d'achat ciblées
-
-### Phase 5 : Surveillance RSS Temps Réel ✅
-- [x] Système de surveillance RSS quasi-instantané (30 secondes)
-- [x] Optimisations HTTP (ETags, Last-Modified, codes 304)
-- [x] Threading asynchrone pour analyses parallèles
-- [x] Détection intelligente via hash de contenu
-- [x] Gestion d'erreurs adaptative
-- [x] **CORRECTION CRITIQUE** : Logique de détection des nouveaux articles simplifiée
-
-## 🎯 Phase 4 : Agent "Ticker Hunter" - Révolution Stratégique
-
-### Objectif Révolutionnaire 🚀
-Transformer BERZERK d'un analyseur de news généraliste en **machine de trading ciblée** via l'identification automatique de tickers actionnables.
-
-### Nouveau Pipeline Révolutionnaire ✅
-```
-Analyse Initiale → **[TICKER HUNTER]** → Routage des Agents → Analyses Spécialisées → Décision Finale
-```
-
-### Implémentation Complète ✅
-
-#### 1. Agent "Ticker Hunter" Ultra-Spécialisé ✅
-- **Profil expert** : Focus exclusif sur les entreprises cotées
-- **Prompt directif** : Identification 1-5 tickers maximum par news
-- **Validation Pydantic** : Structure JSON stricte avec justifications
-- **Règles critiques** : Seules les entreprises publiques avec impact direct
-
-#### 2. Orchestrateur LangGraph Enrichi ✅
-- **Nouveau nœud** : `node_find_actionable_tickers()` (Étape 2)
-- **État étendu** : `actionable_tickers` dans `GraphState`
-- **Flux optimisé** : 1 (Analyse) → 2 (Ticker Hunter) → 3 (Routage) → 4 (Agents) → 5 (Décision)
-- **Gestion d'erreurs** : Logs détaillés et fallback automatique
-
-#### 3. Routage Intelligent Révolutionnaire ✅
-- **Mode PRÉCIS** : 1 analyste actions par ticker identifié
-- **Mode FALLBACK** : Analyse macro si aucun ticker trouvé
-- **Optimisation sectoriels** : Ajout analyste sectoriel si multiples tickers
-- **Limite intelligente** : Maximum 2 agents pour le service automatique
-
-#### 4. Service Daemon 2.0 ✅
-- **Priorisation tickers** : Focus sur le premier ticker identifié
-- **Allocation ciblée** : Maximum 3% pour sécurité (service automatique)
-- **Justification enrichie** : Intégration ticker + signaux + impact
-- **Prise de décision** : Orientée trading d'actions spécifiques
-
-#### 5. Affichage Résultats Enrichi ✅
-- **Section dédiée** : Affichage des tickers identifiés
-- **Détails complets** : Ticker, entreprise, justification d'impact
-- **Logs améliorés** : Traçabilité complète du Ticker Hunter
-
-### Révolution Stratégique 🎯
-
-#### Avant (Phase 3) vs Après (Phase 4)
-| Aspect | Phase 3 | Phase 4 |
-|--------|---------|---------|
-| **Focus** | Analyse macro générale | Tickers spécifiques |
-| **Décisions** | 100% "SURVEILLER" | Décisions d'achat ciblées |
-| **Précision** | Entités vagues | 1-5 tickers maximum |
-| **Agents** | Routage basé entités | 1 agent par ticker |
-| **Efficacité** | Analyses redondantes | Analyses hyper-ciblées |
-
-#### Bénéfices Révolutionnaires 📈
-1. **Hyper-Focus** : Concentration sur actions spécifiques au lieu d'analyses macro vagues
-2. **Qualité décisionnelle** : Analyses précises sur tickers identifiés
-3. **Réduction du bruit** : Élimination des analyses générales improductives
-4. **Alignement mission** : 100% orienté trading d'actions
-5. **Efficacité computationnelle** : Moins d'analyses, plus de qualité
-6. **Performance attendue** : Passage de "intelligent" à "redoutable"
-
-### Impact Transformationnel 🎯
-- **Fin du "SURVEILLER" systématique** : Décisions d'achat/vente ciblées
-- **Précision analytique** : Focus sur 1-2 actions maximum par news
-- **Pipeline orienté trading** : Chaque étape optimisée pour l'investissement
-- **Machine de guerre financière** : BERZERK devient un système d'investissement professionnel
-
-**Cette amélioration représente la transformation la plus importante de BERZERK : d'un analyseur de news à un système d'investissement automatisé de niveau professionnel.**
-
-## 🌐 Phase 5 : Agents Augmentés avec Accès Internet ✅
-
-### Objectif Révolutionnaire 🚀
-Connecter BERZERK au monde extérieur en donnant aux agents l'accès à des **outils temps réel** pour des analyses ancrées dans la réalité du marché.
-
-### Problème Résolu 🎯
-**Avant :** Agents "aveugles" travaillant uniquement avec :
-- Connaissances pré-entraînées (potentiellement obsolètes)  
-- Contenu de l'article analysé
-
-**Après :** Agents "conscients du contexte" avec accès à :
-- 🔍 **Recherche web temps réel** (Tavily AI)
-- 📊 **Données financières actuelles** (yfinance)
-- 💰 **Prix et variations en direct**
-- 📈 **Sentiment du marché** (capitalisation, P/E, volume)
-
-### Implémentation Complète ✅
-
-#### 1. Outils Externes Intégrés ✅
-- **TavilySearchResults** : Recherche web intelligente avec 3 résultats max
-- **get_stock_price()** : Prix actuel et variation quotidienne  
-- **get_market_sentiment()** : Capitalisation, P/E ratio, volume moyen
-- **Gestion d'erreurs robuste** : Fallback automatique en cas d'échec
-
-#### 2. Agent Augmenté Ultra-Intelligent ✅
-- **create_augmented_analyst()** : Agent avec outils disponibles
-- **Prompt système optimisé** : Instructions pour usage stratégique des outils
-- **AgentExecutor configuré** : Max 5 itérations, arrêt anticipé intelligent
-- **Mode verbose** : Visibilité complète du processus de réflexion
-
-#### 3. Processus d'Analyse Révolutionnaire ✅
-```
-1. Analyse de la news fournie
-2. Vérification prix actuel et variation (get_stock_price)
-3. Recherche informations complémentaires (web_search)
-4. Analyse sentiment marché (get_market_sentiment)
-5. Synthèse avec contexte temps réel
-```
-
-#### 4. Intégration Pipeline Principal ✅
-- **Orchestrateur enrichi** : Détection automatique des analyses de tickers
-- **Mode hybride** : Agents augmentés pour tickers + agents classiques pour macro
-- **Service daemon optimisé** : Analyses augmentées en mode automatique
-- **Traçabilité complète** : Logs spéciaux pour analyses augmentées
-
-### Exemple de Processus d'Analyse Augmentée 🤖
-
-**Scénario :** News sur Apple + iPhone sales
-
-**Agent classique (Phase 4) :**
-```
-"Analyse l'impact sur AAPL. L'article semble positif..."
-→ Recommandation basée uniquement sur l'article
-```
-
-**Agent augmenté (Phase 5) :**
-```
-"Analyse l'impact sur AAPL. L'article semble positif..."
-🔧 Utilise get_stock_price("AAPL")
-💰 AAPL: 195.20 USD 📈 +5.20% vs hier
-"Le marché a déjà fortement réagi (+5.2%)..."
-
-🔧 Utilise web_search("Apple concurrents smartphone")  
-📰 "Samsung annonce Galaxy S25 avec IA..."
-"La concurrence s'intensifie avec Samsung..."
-
-🔧 Utilise get_market_sentiment("AAPL")
-📊 AAPL - Cap: 3.0T USD | P/E: 28.5 | Volume moy: 58,000,000
-"Valorisation élevée mais volume normal..."
-
-→ Recommandation nuancée avec contexte marché complet
-```
-
-### Transformation Cognitive 🧠
-
-#### Impact sur la Qualité Décisionnelle
-| Aspect | Agents Classiques | Agents Augmentés |
-|--------|------------------|------------------|
-| **Contexte temporel** | Figé | Temps réel |
-| **Réaction marché** | Inconnue | Vérifiée |
-| **Informations complémentaires** | Limitées à l'article | Web entier accessible |
-| **Valorisation** | Estimation | Données réelles |
-| **Timing** | Théorique | Pratique |
-
-#### Bénéfices Transformationnels 📈
-1. **Contextualisation parfaite** : Décisions ancrées dans la réalité
-2. **Détection de sur-réaction** : Éviter les achats après forte hausse  
-3. **Informations concurrentielles** : Vision élargie du secteur
-4. **Timing optimal** : Prise en compte des mouvements récents
-5. **Risque réduit** : Analyses plus complètes et nuancées
-
-### Architecture Finale BERZERK 2.0 🏗️
-
-```
-📰 News → 🤖 Ticker Hunter → 🌐 Agents Augmentés → 💰 Décision Finale
-              ↓                    ↓
-         Tickers ciblés      Données temps réel
-                                   ↓
-                            🔍 Web + 📊 Finance
-```
-
-**BERZERK est désormais un système d'investissement connecté au monde réel, capable de prendre des décisions informées par le contexte actuel du marché ! 🚀** 
-
-## 🐛 Correction Critique : Problème de Retraitement des Articles
-
-### Problème Identifié
-**Symptôme :** Le système `real_time_rss_monitor.py` retraitait des articles déjà analysés, causant une perte de tokens inutile à chaque redémarrage.
-
-**Cause Racine :** Double logique de cache problématique :
-- `processed_articles` : chargé depuis la base de données au démarrage ✅
-- `articles_cache` : réinitialisé à vide à chaque redémarrage ❌
-
-**Impact :** 
-- Perte de tokens API
-- Analyses redondantes
-- Pollution des logs
-- Performance dégradée
-
-### Solution Implémentée ✅
-**Stratégie :** Simplification de la logique de détection des nouveaux articles
-
-**Modifications dans `real_time_rss_monitor.py` :**
-1. **Suppression de `articles_cache`** dans la classe `FeedState`
-2. **Logique simplifiée** : `if article_link and article_link not in self.processed_articles:`
-3. **Marquage immédiat** : `self.processed_articles.add(article_link)` dès la détection
-4. **Nettoyage des imports** : suppression de `field` non utilisé
-
-**Résultat :** 
-- ✅ Seuls les VRAIS nouveaux articles sont traités
-- ✅ Pas de retraitement après redémarrage
-- ✅ Économie de tokens API
-- ✅ Logs plus propres 
-
-## 🎯 Mise à Jour Majeure : Focus Bloomberg et Nettoyage Projet
-
-### Phase 6 : Simplification et Fiabilité ✅
-**Objectif :** Concentrer les analyses uniquement sur le flux RSS de Bloomberg (plus fiable) et nettoyer le projet.
-
-**Modifications appliquées :**
-1. **Flux RSS simplifié** : Seul Bloomberg conservé dans `RSS_FEEDS`
-   - ✅ `berzerk_lab.py` : Bloomberg uniquement
-   - ✅ `test_feeds.py` : Bloomberg uniquement  
-   - ✅ `real_time_rss_monitor.py` : Messages mis à jour
-2. **Nettoyage des fichiers obsolètes** :
-   - ✅ Suppression de `auto_monitor.py` (redondant)
-   - ✅ Suppression de `berzerk_service.py` (redondant)
-3. **Fichiers de configuration ajoutés** :
-   - ✅ `requirements.txt` : Toutes les dépendances Python
-   - ✅ `env.example` : Variables d'environnement documentées
-
-**Justification :** Bloomberg est plus fiable et cohérent que Yahoo Finance. Cette simplification améliore la qualité des analyses et la reproductibilité du projet.
-
-## 🚀 Phase 7 : Transformation BERZERK "TAC AU TAC" - Mode Pure Prédiction ✅
-
-### Révolution Philosophique : Du "Prudent" au "Visionnaire" 🎯
-
-**Problème stratégique identifié :** Le pipeline BERZERK, dans sa version "augmentée", était devenu un **analyste prudent** qui vérifiait si le marché avait déjà réagi à la news avant de prendre position. Cette approche, bien que sensée pour un humain, allait à l'encontre de la philosophie "tac au tac" de BERZERK : agir **AVANT** que le marché n'intègre l'information.
-
-#### Diagnostic des "Freins" Identifiés 🔍
-
-**Composants "contaminants" supprimés :**
-1. **`get_stock_price()`** - Calculait les variations vs jour précédent ❌
-2. **`get_market_sentiment()`** - Récupérait P/E, volume, capitalisation ❌
-3. **Prompt agent augmenté** - "Mentionne si le marché a déjà réagi" ❌
-4. **Pipeline orchestrateur** - Appelait `run_augmented_analysis()` ❌
-
-**Résultat :** L'IA agissait comme un **co-pilote prudent** qui regardait dans le rétroviseur au lieu d'être un **moteur de prédiction** focalisé sur la route à venir.
-
-### Implémentation du Mode "Pure Prédiction" ✅
-
-#### 1. Nouvel Agent Visionnaire (`agents.py`) ✅
-**Fonction :** `create_pure_prediction_analyst()`
-- **Philosophie :** Prédiction PURE basée uniquement sur le potentiel de la news
-- **Outils disponibles :** UNIQUEMENT `web_search_tool` pour contexte qualitatif
-- **Interdictions :** Aucune donnée de prix, volume, ou réaction de marché
-- **Prompt :** "IGNORE TOTALEMENT si le marché a déjà réagi ou non"
-
-**Fonction :** `run_pure_prediction_analysis()`
-- **Mission :** Analyse prédictive sans pollution de données historiques
-- **Focale :** Impact business fondamental prédit
-- **Vitesse :** Moins d'itérations (4 max) pour décision rapide
-
-#### 2. Orchestrateur Transformé (`orchestrator.py`) ✅
-**Modification clé :** Ligne 267 
-```python
-# AVANT (mode prudent)
-analysis = run_augmented_analysis(ticker=ticker, ...)
-"agent_type": agent['agent_type'] + "_augmented"
-"🚀 Analyse AUGMENTÉE pour {ticker} (avec outils temps réel)"
-
-# APRÈS (mode visionnaire)  
-analysis = run_pure_prediction_analysis(ticker=ticker, ...)
-"agent_type": agent['agent_type'] + "_pure_prediction"  
-"🚀 Analyse PURE PREDICTION pour {ticker} (mode 'tac au tac')"
-```
-
-#### 3. Pipeline Révolutionné 🔄
-**Nouveau flux :**
-```
-News → Ticker Hunter → Agent Pure Prédiction → Décision Visionnaire
-        ↓               ↓                       ↓
-   Tickers ciblés   Impact prédit          Action immédiate
-                  (SANS données prix)
-```
-
-### Transformation Cognitive Fondamentale 🧠
-
-#### Ancien vs Nouveau Paradigme
-| Aspect | Mode "Augmenté" (Prudent) | Mode "Pure Prédiction" (Visionnaire) |
-|--------|---------------------------|--------------------------------------|
-| **Base décision** | News + données marché | News + contexte qualitatif SEUL |
-| **Question clé** | "Le marché a-t-il réagi ?" | "Quel est l'impact futur ?" |
-| **Timing** | Après analyse du mouvement | AVANT réaction du marché |
-| **Philosophie** | Co-pilote prudent | Machine prédictive |
-| **Vitesse** | Modérée (5 itérations) | Rapide (4 itérations) |
-| **Données interdites** | ✅ Prix, P/E, volume | ❌ AUCUNE donnée financière |
-
-#### Bénéfices Révolutionnaires 🎯
-1. **Alignement stratégique** : 100% fidèle à la mission "tac au tac"
-2. **Pureté du signal** : Décision non "polluée" par la volatilité court terme
-3. **Vitesse de décision** : Plus rapide (suppression appels API financiers)
-4. **Audace retrouvée** : BERZERK redevient un système offensif
-5. **Avantage compétitif** : Agit AVANT la masse des investisseurs
-
-### Validation Technique ✅
-**Test pipeline complet :** 
-- ✅ Import `run_pure_prediction_analysis` réussi
-- ✅ Orchestrateur modifié opérationnel  
-- ✅ Logs "PURE PREDICTION (mode 'tac au tac')" confirmés
-- ✅ Pipeline exécutable sans erreur de code
-
-### Impact Transformationnel Final 🚀
-
-**BERZERK a retrouvé son âme de guerrier financier :** 
-- **AVANT :** "Analysons si le marché a déjà bougé..."
-- **APRÈS :** "Que va provoquer cette information ?"
-
-Cette transformation représente le **retour aux sources** de BERZERK : un système d'investissement **visionnaire et offensif** qui parie sur l'intelligence artificielle pure plutôt que sur la prudence humaine.
-
-## 🤔 Réflexions & Décisions - Phase 7
-
-### Décision Stratégique Majeure
-**Problème :** Tension entre sécurité (données marché) et performance (prédiction pure)
-**Solution choisie :** Mode pure prédiction avec possibilité de retour au mode augmenté
-**Justification :** L'IA doit exploiter son avantage prédictif, pas imiter la prudence humaine
-
-### Flexibilité Préservée 🔧
-- **Code augmenté conservé** : `run_augmented_analysis()` disponible si besoin
-- **Basculement facile** : Une ligne à modifier dans l'orchestrateur
-- **Choix utilisateur** : Possibilité d'implémenter un paramètre de mode
-
-**BERZERK 2.0 EST NÉ : Machine de guerre financière pure et visionnaire ! 🎯** 
-
-## 🎨 Phase 8 : Interface "Decision Feed" - Clarté Radicale ✅
-
-### Vision Révolutionnaire : De l'Ancien Dashboard au Decision Feed 🎯
-
-**Problème identifié :** L'ancien `berzerk_dashboard.py` était complexe, avec de multiples onglets et une hiérarchie d'information confuse. L'utilisateur voulait une **interface épurée, priorité à l'action, simplicité maximale**.
-
-#### Philosophie "Clarté Radicale" Implémentée 🚀
-
-**Principes de Design :**
-1. **Priorité à l'action** : Décision (ACHETER/VENDRE) visible instantanément
-2. **Simplicité** : Pas d'onglets, flux vertical unique
-3. **Hiérarchie** : Essentiel visible, détails en un clic (expander)
-
-#### Spécifications Techniques Respectées ✅
-
-**Structure de Données :**
-- ✅ **Format standard** : `action`, `ticker`, `nom_entreprise`, `news_title`, etc.
-- ✅ **Intégration DB** : Lecture directe de `decision_json` depuis `berzerk.db`
-- ✅ **Prix temps réel** : yfinance pour calcul performance
-
-**Layout Exact :**
-- ✅ **Configuration** : `st.set_page_config(layout="wide")`
-- ✅ **En-tête** : "⚡ BERZERK - Decision Feed" + sous-titre
-- ✅ **Barre statut** : 3 métriques (Statut, Décisions 24h, Achats 24h)
-- ✅ **Flux principal** : Cartes de décision avec `display_decision_card()`
-
-**Carte de Décision (spécifications exactes) :**
-- ✅ **Layout [1, 8]** : Badge action coloré + infos principales
-- ✅ **Couleurs CSS** : Vert #28a745, Rouge #dc3545, Jaune #ffc107, Gris #6c757d
-- ✅ **Section performance** : Prix décision, Prix actuel, Performance % avec emoji
-- ✅ **Expander détails** : Justification IA, Points +/-, Allocation, Lien article
-
-#### Fonctionnalités Clés Implémentées 🔧
-
-**1. Gestion des Données :**
-```python
-def load_decisions_from_db() -> List[Dict[str, Any]]
-```
-- Lecture automatique depuis `berzerk.db`
-- Filtrage des 7 derniers jours
-- Fallback sur exemples si pas de données
-
-**2. Affichage des Cartes :**
-```python
-def display_decision_card(decision: Dict[str, Any])
-```
-- Badge d'action coloré avec CSS
-- Calcul automatique de performance
-- Expander pour détails complets
-
-**3. Prix Temps Réel :**
-```python
-def get_current_price(ticker: str) -> float
-```
-- Intégration yfinance
-- Calcul automatique de performance vs prix de décision
-- Gestion d'erreurs robuste
-
-#### Validation Utilisateur ✅
-
-**Feedback :** *"ok j'aime le visuel gardons le comme ca pour l'instant"*
-
-✅ **Interface validée et prête pour utilisation**
-
-#### Impact sur l'Architecture BERZERK 📊
-
-**Ancien vs Nouveau :**
-- ❌ **Ancien** : `berzerk_dashboard.py` - Complexe, multi-onglets
-- ✅ **Nouveau** : `berzerk_decision_feed.py` - Épuré, flux unique
-
-**Intégration :**
-- ✅ Compatible avec pipeline BERZERK 2.0 (mode pure prédiction)
-- ✅ Lecture directe des décisions stockées
-- ✅ Interface responsive et moderne
-
-#### Prochaines Étapes Suggérées 🚀
-
-1. **Test avec données réelles** : Lancer monitoring + interface
-2. **Optimisations performance** : Cache pour prix, refresh automatique
-3. **Fonctionnalités avancées** : Filtres, recherche, export
-4. **Mode sombre** : Thème alternatif si demandé
-
----
-
-## 📈 Bilan Global - BERZERK Phase 8
-
-**État Actuel : OPÉRATIONNEL ✅**
-
-- ✅ **Pipeline Pure Prédiction** : Mode "tac au tac" fonctionnel
-- ✅ **Interface Decision Feed** : Design "Clarté Radicale" validé
-- ✅ **Architecture complète** : De la collecte RSS à l'affichage décisions
-
-**BERZERK** est maintenant une **machine de guerre prédictive complète** avec interface utilisateur de qualité professionnelle.
+# Suivi Projet BERZERK
+
+## 1. Description Générale
+Objectif : Orchestration automatisée de décisions d'investissement IA avec traçabilité et suivi de performance. Capture robuste du prix à la décision, stockage, et affichage comparatif dans le dashboard.
+
+## 2. Plan de Tâches
+- [x] Fonction robuste de capture de prix en temps réel (`get_live_price`) avec fallback multi-niveaux et logs WARN.
+- [x] Intégration de la capture du prix exact dans `node_final_investor_decision` (orchestrator.py).
+- [x] Ajout de la clé `prix_a_la_decision` dans la structure de décision.
+- [x] Lecture et affichage du prix à la décision dans le dashboard (`berzerk_dashboard.py`).
+- [x] Affichage conditionnel de la performance et gestion des cas N/A.
+
+## 3. Journal des Modifications
+- 2024-05-07 : Ajout de `get_live_price` robuste (fallback intraday, info, historique, gestion exceptions).
+- 2024-05-07 : Enrichissement de la décision avec le prix capturé dans `node_final_investor_decision`.
+- 2024-05-07 : Lecture de la clé `prix_a_la_decision` dans `load_decisions_from_db` et affichage dans `display_decision_card` et `display_active_portfolio`.
+- 2024-05-07 : Affichage conditionnel et aide utilisateur pour les cas où le prix n'est pas disponible.
+
+## 4. Suivi des Erreurs
+- Si le prix n'est pas capturé (0.0), affichage WARN dans la console et "N/A" dans le dashboard avec explication.
+- Robustesse assurée par gestion d'exceptions à chaque étape de récupération de prix.
+
+## 5. Résultats des Tests
+- Test manuel sur tickers valides et invalides : prix capturé ou fallback, logs WARN visibles.
+- Dashboard affiche correctement prix à la décision, prix actuel, performance ou "N/A".
+
+## 6. Documentation Consultée
+- [yfinance - Doc officielle](https://github.com/ranaroussi/yfinance)
+- [Streamlit st.metric](https://docs.streamlit.io/library/api-reference/data/st.metric)
+
+## 7. Structure du Projet (extrait)
+- orchestrator.py : logique de décision, capture prix
+- berzerk_dashboard.py : affichage, calculs de performance
+- suivi_projet.md : documentation centrale
+
+## 8. Réflexions & Décisions
+- Approche multi-fallback pour la robustesse de la capture de prix.
+- Ajout systématique de logs pour la traçabilité.
+- Affichage UX-friendly pour les cas d'indisponibilité de prix.
+- Compatibilité ascendante assurée (clé absente = 0.0, affichage N/A).
 </file>
 
 <file path="agents.py">
@@ -4530,14 +3869,17 @@ Réponds IMPÉRATIVEMENT au format JSON suivant, et rien d'autre. Si aucune acti
     ]
 }}
 
-**RÈGLES CRITIQUES :**
-- Seules les entreprises publiques avec des tickers boursiers réels (NYSE, NASDAQ, etc.)
-- Un ticker est une courte chaîne de 1 à 5 lettres majuscules (ex: GOOGL, MSFT), parfois avec un suffixe de marché (ex: .HK, .PA).
-- Le ticker ne doit JAMAIS contenir de '$', d'espaces ou être une phrase.
+**RÈGLES CRITIQUES ABSOLUES :**
+- **FORMAT :** Le ticker est une chaîne de 1 à 5 lettres MAJUSCULES, parfois suivi d'un point et d'un suffixe de marché (ex: .PA, .DE). Exemples de tickers valides: 'AAPL', 'MSFT', 'AIR.PA'.
+- **INTERDIT :** Le ticker ne doit JAMAIS contenir de '$', d'espaces, de minuscules, ou être une phrase descriptive. 'CRYPTO_INDEX' ou '$TSLA' sont INVALIDE.
+- **INTERDIT :** Ne retourne jamais un nom de place de marché (ex: 'XETRA', 'NASDAQ') ou un indice (ex: 'S&P 500') comme ticker.
+- **SOURCE :** Uniquement des entreprises cotées sur des bourses majeures (NYSE, NASDAQ, Euronext, etc.).
+- **FOCUS :** Si la news parle d'une entreprise non cotée (ex: Discord, une startup), tu ne dois PAS l'identifier. Ta mission est de trouver des tickers **tradables**.
+- **SI AUCUN TICKER VALIDE :** Retourne impérativement une liste vide `[]`. Ne tente pas d'inventer un ticker.
+- **VÉRIFICATION :** Avant de proposer un ticker, assure-toi mentalement qu'il correspond à une entreprise spécifique et non à un concept général ou une place de marché. Vérifie qu'il existe réellement en bourse.
 - Impact direct et mesurable sur le business
 - Justification factuelle basée sur le contenu de l'article
 - Maximum 5 tickers pour rester focus
-- Si aucun ticker n'est clairement identifiable, retourne une liste vide
 """,
 )
 
@@ -4679,15 +4021,18 @@ Ta mission est de prendre la décision finale d'investissement basée sur le rap
 **TACHE FINALE :**
 Sur la base EXCLUSIVE des informations ci-dessus, produis une décision d'investissement structurée au format JSON. Ne rien ajouter d'autre.
 
+**NOUVELLE RÈGLE STRATÉGIQUE :**
+- Si plusieurs analyses d'actions sont positives (par exemple, plusieurs recommandations d'ACHAT), ta mission est de **sélectionner la MEILLEURE et UNIQUE opportunité**. Compare la clarté du signal, la conviction de l'analyse et l'impact direct de la news. Justifie brièvement ton choix dans la `justification_synthetique`. Ignore les autres opportunités.
+
 **PRIORITÉ :** Concentre-toi sur les tickers spécifiques identifiés par le Ticker Hunter. Ignore les analyses macro générales.
 
 Le format JSON doit contenir les clés suivantes :
-- "decision": "ACHETER", "VENDRE", "SURVEILLER" ou "IGNORER".
-- "ticker": Le ticker de l'action concernée (string, ou null si IGNORER).
+- "decision": "LONG" (pari sur la hausse), "SHORT" (pari sur la baisse), "SURVEILLER" ou "IGNORER".
+- "ticker": Le ticker de l'action **sélectionnée** (string, ou null si IGNORER).
 - "confiance": "ÉLEVÉE", "MOYENNE", "FAIBLE" (string).
 - "horizon": "Court Terme", "Moyen Terme", ou "Long Terme". DÉDUIS-LE du rapport.
 - "justification_synthetique": Une phrase unique et directe expliquant la décision.
-- "allocation_capital_pourcentage": Le pourcentage du capital disponible à allouer à ce trade (nombre flottant, de 0.0 à 5.0). Allouer 0 si la décision n'est pas "ACHETER". Une allocation typique pour une confiance MOYENNE est 1%, ÉLEVÉE est 2-3%.
+- "allocation_capital_pourcentage": Le pourcentage du capital disponible à allouer à ce trade (nombre flottant, de 0.0 à 5.0). Allouer 0 si la décision n'est pas "LONG". Une allocation typique pour une confiance MOYENNE est 1%, ÉLEVÉE est 2-3%.
 - "points_cles_positifs": Une liste de 2-3 points clés positifs tirés du rapport.
 - "points_cles_negatifs_risques": Une liste de 2-3 risques ou points négatifs tirés du rapport.
 """,
@@ -4903,20 +4248,42 @@ def run_ticker_hunter(
             {"news_summary": news_summary, "full_article_text": full_article_text}
         )
 
-        tickers_found = result.get("tickers_identifies", [])
-        print(f"✅ Ticker Hunter : {len(tickers_found)} ticker(s) identifié(s)")
-
-        if tickers_found:
-            for ticker_info in tickers_found:
-                # Gestion des objets Pydantic ET des dictionnaires
+        tickers_bruts = result.get("tickers_identifies", [])
+        
+        # --- DÉBUT DE LA MODIFICATION : VALIDATION ET NETTOYAGE ---
+        tickers_valides = []
+        if tickers_bruts:
+            print(f"🔬 Ticker Hunter a retourné {len(tickers_bruts)} ticker(s) bruts. Validation en cours...")
+            for ticker_info in tickers_bruts:
+                ticker = ""
+                # Gérer les objets Pydantic et les dictionnaires
                 if hasattr(ticker_info, "ticker"):
                     ticker = ticker_info.ticker
-                    company = ticker_info.nom_entreprise
                 else:
-                    ticker = ticker_info.get("ticker", "N/A")
-                    company = ticker_info.get("nom_entreprise", "N/A")
-                print(f"   🎯 {ticker} - {company}")
+                    ticker = ticker_info.get("ticker", "")
+                
+                # 1. Nettoyage initial : supprimer les '$' et les espaces
+                ticker_nettoye = ticker.strip().replace("$", "")
+                
+                # 2. Validation du format : lettres majuscules, points autorisés, longueur
+                import re
+                if re.match(r"^[A-Z]{1,6}(\.[A-Z]{2})?$", ticker_nettoye):
+                    # Le format est plausible, on le garde
+                    # On met à jour le ticker dans le dictionnaire/objet
+                    if hasattr(ticker_info, "ticker"):
+                        ticker_info.ticker = ticker_nettoye
+                    else:
+                        ticker_info['ticker'] = ticker_nettoye
+                    tickers_valides.append(ticker_info)
+                    print(f"    ✅ Ticker valide trouvé : {ticker_nettoye}")
+                else:
+                    print(f"    ❌ Ticker invalide rejeté : '{ticker}'")
+        
+        result['tickers_identifies'] = tickers_valides
+        # --- FIN DE LA MODIFICATION ---
 
+        print(f"🎯 Ticker Hunter : {len(tickers_valides)} ticker(s) final(aux) après validation.")
+        
         return result
 
     except Exception as e:
@@ -5236,69 +4603,32 @@ st.set_page_config(
 # --- NOUVELLES FONCTIONS DE PERFORMANCE ---
 
 
-@st.cache_data(ttl=86400)  # Cache de 1 jour, car ce prix historique ne changera pas.
-def get_price_at_decision_time(ticker: str, decision_time_str: str) -> float:
-    """
-    Récupère le prix de clôture du jour de la décision (ou du jour précédent si marché fermé).
-    Cette méthode est extrêmement rapide car elle n'utilise que des données journalières.
-    """
-    ticker = ticker.strip().replace("$", "")
-    if not ticker:
-        return 0.0
-
-    try:
-        decision_dt = datetime.fromisoformat(decision_time_str.replace("Z", "+00:00"))
-        decision_date = decision_dt.date()
-
-        stock = yf.Ticker(ticker)
-
-        # On télécharge une petite plage de données journalières autour de la date de décision. C'est très rapide.
-        hist = stock.history(
-            start=decision_date - timedelta(days=7),
-            end=decision_date + timedelta(days=1),
-        )
-
-        if hist.empty:
-            return 0.0
-
-        # On cherche les données pour le jour exact de la décision
-        day_data = hist[hist.index.date == decision_date]
-
-        # CAS 1: Le marché était ouvert ce jour-là. On prend le prix de clôture.
-        if not day_data.empty:
-            return float(day_data["Close"].iloc[0])
-
-        # CAS 2: Le marché était fermé (weekend/jour férié). On prend la clôture du jour d'avant.
-        else:
-            previous_days_data = hist[hist.index.date < decision_date]
-            if not previous_days_data.empty:
-                return float(previous_days_data["Close"].iloc[-1])
-
-        return 0.0
-    except Exception:
-        return 0.0
-
 
 @st.cache_data(ttl=60)  # Cache 1 minute pour les prix actuels
 def get_current_price(ticker: str) -> float:
-    """Récupère le prix actuel d'une action via yfinance (version robuste)."""
+    """Récupère le prix actuel d'une action avec des fallbacks robustes."""
     ticker = ticker.strip().replace("$", "")  # Nettoyage du ticker
     if not ticker:
         return 0.0
-
     try:
         stock = yf.Ticker(ticker)
-        data = stock.history(
-            period="1d", interval="1m"
-        )  # On prend la dernière minute pour le prix le plus récent
+        
+        # 1. Priorité aux données intraday
+        data = stock.history(period="1d", interval="1m")
         if not data.empty:
             return float(data["Close"].iloc[-1])
 
-        # Fallback si les données intraday ne sont pas dispo
-        price = stock.info.get("regularMarketPrice")
+        # 2. Fallback sur 'info'
+        info = stock.info
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
         if price:
             return float(price)
 
+        # 3. Fallback ultime sur la dernière clôture historique
+        hist = stock.history(period="5d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+            
         return 0.0
     except Exception:
         # Gestion silencieuse des erreurs
@@ -5406,12 +4736,24 @@ def load_decisions_from_db() -> list[dict[str, Any]]:
         for title, link, _published_date, decision_json, analyzed_at in rows:
             try:
                 decision_data = json.loads(decision_json)
-                action = decision_data.get(
-                    "action", decision_data.get("decision", "INCONNUE")
-                ).upper()
+                
+                # --- DÉBUT DE LA MODIFICATION ---
+                # Récupérer l'action brute, quelle que soit la clé utilisée ("action" ou "decision")
+                action_brute = decision_data.get("action", decision_data.get("decision", "INCONNUE")).upper()
+                
+                # Normaliser l'action pour qu'elle soit compatible avec le nouveau système
+                if action_brute == "ACHETER":
+                    action_normalisee = "LONG"
+                elif action_brute == "VENDRE":
+                    action_normalisee = "SHORT"
+                else:
+                    # Garde les actions déjà au bon format (LONG, SHORT, SURVEILLER)
+                    action_normalisee = action_brute
+                # --- FIN DE LA MODIFICATION ---
+                
                 ticker = decision_data.get("ticker", None)
 
-                if action == "INCONNUE" or not ticker:
+                if action_normalisee in ["INCONNUE", "ERREUR"] or not ticker:
                     continue
 
                 # Créer un identifiant unique basé sur analyzed_at pour éviter les clés dupliquées
@@ -5420,11 +4762,13 @@ def load_decisions_from_db() -> list[dict[str, Any]]:
                 ]
 
                 # --- ENRICHISSEMENT AVEC DONNÉES DE PERFORMANCE ---
-                prix_decision = get_price_at_decision_time(ticker, analyzed_at)
+                prix_decision = float(decision_data.get("prix_a_la_decision", 0.0))
+                
+                # On récupère le prix actuel pour la comparaison
                 prix_actuel = get_current_price(ticker)
 
                 decision = {
-                    "action": action,
+                    "action": action_normalisee,
                     "ticker": ticker,
                     "unique_id": unique_id,  # Identifiant unique pour éviter les doublons
                     "nom_entreprise": decision_data.get(
@@ -5473,7 +4817,7 @@ def get_sample_decisions() -> list[dict[str, Any]]:
     """Génère des décisions d'exemple pour la démonstration (avec données de performance)."""
     return [
         {
-            "action": "ACHETER",
+            "action": "LONG",
             "ticker": "AAPL",
             "unique_id": "sample001",
             "nom_entreprise": "Apple Inc.",
@@ -5498,7 +4842,7 @@ def get_sample_decisions() -> list[dict[str, Any]]:
             "article_link": "https://example.com/apple-ai-news",
         },
         {
-            "action": "VENDRE",
+            "action": "SHORT",
             "ticker": "XOM",
             "unique_id": "sample002",
             "nom_entreprise": "ExxonMobil Corporation",
@@ -5550,8 +4894,10 @@ def display_decision_card(decision: dict[str, Any]):
     """Affiche une carte de décision 2.1 avec suivi de performance intégré."""
     action = decision["action"]
     color_map = {
-        "ACHETER": "#28a745",
-        "VENDRE": "#dc3545",
+        "LONG": "#28a745",      # Vert pour LONG
+        "SHORT": "#dc3545",     # Rouge pour SHORT
+        "ACHETER": "#28a745",   # Compatibilité avec les anciennes données
+        "VENDRE": "#dc3545",    # Compatibilité avec les anciennes données
         "SURVEILLER": "#ffc107",
         "IGNORER": "#6c757d",
     }
@@ -5592,9 +4938,11 @@ def display_decision_card(decision: dict[str, Any]):
             else:
                 st.caption("Tendance 7J: Données indisponibles")
 
-        # --- NOUVELLE SECTION : SUIVI DE PERFORMANCE (AVEC CONDITION) ---
-        # On affiche la performance SEULEMENT si on a un prix de décision valide (> 0)
-        if decision["prix_decision"] > 0 and decision["prix_actuel"] > 0:
+        # Affichage conditionnel pour IGNORER/SURVEILLER
+        if action in ["IGNORER", "SURVEILLER"]:
+            st.info(f"Raison de la surveillance : {decision['justification']}")
+        else:
+            # --- SECTION ROBUSTE : SUIVI DE PERFORMANCE ---
             st.markdown("---")
             st.markdown(
                 '<div class="key-indicator-title" style="text-align:left; margin-bottom: 0.5rem;">📊 Suivi de la Position</div>',
@@ -5602,34 +4950,36 @@ def display_decision_card(decision: dict[str, Any]):
             )
 
             perf_cols = st.columns(3)
-
-            # Calcul de la performance
-            perf_pct = 0
-            if decision["action"] == "ACHETER":
-                perf_pct = (
-                    (decision["prix_actuel"] - decision["prix_decision"])
-                    / decision["prix_decision"]
-                ) * 100
-            elif decision["action"] == "VENDRE":  # Vente à découvert
-                perf_pct = (
-                    (decision["prix_decision"] - decision["prix_actuel"])
-                    / decision["prix_decision"]
-                ) * 100
-
-
+            prix_decision = decision.get("prix_decision", 0.0)
+            prix_actuel = decision.get("prix_actuel", 0.0)
+            # Affichage du Prix à la Décision
             with perf_cols[0]:
-                st.metric("Prix à la décision", f"{decision['prix_decision']:.2f} $")
+                if prix_decision > 0:
+                    st.metric("Prix à la décision", f"{prix_decision:.2f} $")
+                else:
+                    st.metric("Prix à la décision", "N/A", help="Le prix n'a pas pu être capturé au moment de la décision.")
+            # Affichage du Prix Actuel
             with perf_cols[1]:
-                st.metric("Prix actuel", f"{decision['prix_actuel']:.2f} $")
+                if prix_actuel > 0:
+                    st.metric("Prix actuel", f"{prix_actuel:.2f} $")
+                else:
+                    st.metric("Prix actuel", "N/A", help="Le prix actuel est indisponible (marché fermé ou ticker invalide).")
+            # Affichage de la Performance (conditionnel)
             with perf_cols[2]:
-                # On remplace le conteneur de performance par une métrique standard pour un meilleur alignement
-                st.metric(
-                    "Performance",
-                    f"{perf_pct:+.2f}%",
-                    delta_color="normal" if perf_pct >= 0 else "inverse",
-                )
-
-        st.markdown("---")
+                if prix_decision > 0 and prix_actuel > 0:
+                    perf_pct = 0
+                    if decision["action"] == "LONG":
+                        perf_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+                    elif decision["action"] == "SHORT":
+                        perf_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+                    st.metric(
+                        "Performance",
+                        f"{perf_pct:+.2f}%",
+                        delta_color="normal" if perf_pct >= 0 else "inverse",
+                    )
+                else:
+                    st.metric("Performance", "N/A", help="Calcul impossible sans les deux prix.")
+            st.markdown("---")
         # --- FIN DE LA SECTION MODIFIÉE ---
 
         # === INDICATEURS CLÉS ===
@@ -5682,11 +5032,168 @@ def display_decision_card(decision: dict[str, Any]):
                 st.markdown("⚠️ **Risques & Points Négatifs**")
                 for point in decision["points_negatifs"]:
                     st.write(f"• {point}")
-            if decision["action"] == "ACHETER":
+            if decision["action"] == "LONG":
                 st.info(
                     f"💡 Allocation Suggérée: {decision['allocation_pct']}% du capital de trading."
                 )
             st.link_button("Consulter l'article original ↗", decision["article_link"])
+
+
+def display_decision_feed():
+    """Affiche le flux de décisions avec suivi de performance."""
+    # === BARRE DE STATUT ===
+    stat_col1, stat_col2, stat_col3 = st.columns(3)
+
+    # Charger les décisions
+    decisions = load_decisions_from_db()
+
+    # Si pas de données réelles, utiliser les exemples
+    if not decisions:
+        st.warning("🔄 Aucune décision récente dans la base. Affichage des exemples.")
+        decisions = get_sample_decisions()
+
+    # Calculs pour les statistiques
+    now = datetime.now()
+    decisions_24h = len(
+        [
+            d
+            for d in decisions
+            if datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
+            > now - timedelta(hours=24)
+        ]
+    )
+    # Compter les signaux LONG des dernières 24h
+    longs_24h = len(
+        [
+            d
+            for d in decisions
+            if d["action"] == "LONG"
+            and datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
+            > now - timedelta(hours=24)
+        ]
+    )
+
+    with stat_col1:
+        st.metric("Statut Système", "🟢 Opérationnel")
+
+    with stat_col2:
+        st.metric("Décisions 24h", decisions_24h)
+
+    with stat_col3:
+        st.metric("Signaux LONG 24h", longs_24h)
+
+    st.markdown("---")
+
+    # === FLUX PRINCIPAL ===
+    if decisions:
+        st.markdown("### 📈 Flux de Décisions avec Suivi de Performance")
+
+        for decision in decisions:
+            display_decision_card(decision)
+            st.markdown("")  # Espace entre les cartes
+    else:
+        st.info("📊 Aucune décision à afficher pour le moment.")
+        st.markdown(
+            "Lancez le monitoring pour commencer à générer des décisions : `python start_realtime_monitor.py`"
+        )
+
+
+def display_active_portfolio():
+    """Affiche le portefeuille actif avec KPIs et tableau détaillé."""
+    st.header("📊 Suivi du Portefeuille Actif")
+    
+    decisions = load_decisions_from_db()
+    
+    # --- VÉRIFICATION CLÉ ---
+    # Ce filtrage fonctionnera maintenant grâce à la normalisation faite en Phase 1
+    active_positions = [d for d in decisions if d['action'] in ['LONG', 'SHORT']]
+    # --- FIN DE LA VÉRIFICATION ---
+
+    if not active_positions:
+        st.warning("ℹ️ Aucune position LONG ou SHORT n'a été trouvée dans les décisions récentes.")
+        st.write("Le portefeuille actif s'affichera ici dès que de nouvelles positions de trading seront prises par l'IA.")
+        return
+    
+    # Calculer les KPIs globaux
+    total_pnl_pct = 0
+    winning_trades = 0
+    
+    for pos in active_positions:
+        prix_decision = pos.get("prix_decision", 0.0)
+        prix_actuel = pos.get("prix_actuel", 0.0)
+        pnl_pct = 0
+        if prix_decision > 0 and prix_actuel > 0:
+            if pos['action'] == 'LONG':
+                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+            elif pos['action'] == 'SHORT':
+                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+        
+        if pnl_pct > 0:
+            winning_trades += 1
+        total_pnl_pct += pnl_pct
+
+    avg_pnl = total_pnl_pct / len(active_positions)
+    win_rate = (winning_trades / len(active_positions)) * 100
+    
+    # Afficher les KPIs
+    kpi_cols = st.columns(4)
+    with kpi_cols[0]:
+        st.metric("Positions Ouvertes", len(active_positions))
+    with kpi_cols[1]:
+        long_count = len([p for p in active_positions if p['action'] == 'LONG'])
+        st.metric("Positions LONG", long_count)
+    with kpi_cols[2]:
+        short_count = len([p for p in active_positions if p['action'] == 'SHORT'])
+        st.metric("Positions SHORT", short_count)
+    with kpi_cols[3]:
+        st.metric("Taux de Réussite", f"{win_rate:.1f}%")
+        
+    st.markdown("---")
+    
+    # Tableau détaillé des positions
+    st.subheader("Détail des Positions")
+    
+    # Créer les en-têtes du tableau
+    header_cols = st.columns([1, 1, 2, 1.5, 1.5, 1.5])
+    headers = ["Ticker", "Direction", "Date Entrée", "Prix Entrée", "Prix Actuel", "Performance (%)"]
+    for col, header in zip(header_cols, headers):
+        col.markdown(f"**{header}**")
+
+    # Mapping des couleurs
+    color_map = {
+        "LONG": "#28a745",
+        "SHORT": "#dc3545",
+        "SURVEILLER": "#ffc107",
+        "IGNORER": "#6c757d",
+    }
+
+    # Afficher chaque position
+    for pos in active_positions:
+        prix_decision = pos.get("prix_decision", 0.0)
+        prix_actuel = pos.get("prix_actuel", 0.0)
+        pnl_pct = 0
+        
+        if prix_decision > 0 and prix_actuel > 0:
+            if pos['action'] == 'LONG':
+                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+            elif pos['action'] == 'SHORT':
+                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+
+        color = "green" if pnl_pct >= 0 else "red"
+        
+        row_cols = st.columns([1, 1, 2, 1.5, 1.5, 1.5])
+        row_cols[0].text(pos['ticker'])
+        row_cols[1].markdown(f"**<font color='{color_map[pos['action']]}'>{pos['action']}</font>**", unsafe_allow_html=True)
+        analyzed_dt = datetime.fromisoformat(pos["analyzed_at"].replace("Z", "+00:00"))
+        row_cols[2].text(analyzed_dt.strftime('%d/%m/%y %H:%M'))
+        row_cols[3].text(f"{prix_decision:.2f} $")
+        row_cols[4].text(f"{prix_actuel:.2f} $")
+        row_cols[5].markdown(f"**<font color='{color}'>{pnl_pct:+.2f}%</font>**", unsafe_allow_html=True)
+        
+        # Ajouter un expander pour les détails du signal original
+        with st.expander(f"Voir détails pour {pos['ticker']}"):
+            st.write(f"**Signal original :** {pos['news_title']}")
+            st.write(f"**Justification IA :** {pos['justification']}")
 
 
 def main():
@@ -5761,63 +5268,31 @@ def main():
     )
 
     # === EN-TÊTE ===
-    st.title("⚡ BERZERK - Decision Feed")
+    st.title("⚡ BERZERK - Centre de Commandement Trading")
     st.caption("Analyse IA. Décisions Immédiates. Suivi de Performance Temps Réel.")
 
-    # === BARRE DE STATUT ===
-    stat_col1, stat_col2, stat_col3 = st.columns(3)
+    # Création des deux onglets principaux
+    tab1, tab2 = st.tabs(["⚡ Flux de Décisions", "📊 Portefeuille Actif"])
 
-    # Charger les décisions
-    decisions = load_decisions_from_db()
+    with tab1:
+        display_decision_feed()
 
-    # Si pas de données réelles, utiliser les exemples
-    if not decisions:
-        st.warning("🔄 Aucune décision récente dans la base. Affichage des exemples.")
-        decisions = get_sample_decisions()
+    with tab2:
+        display_active_portfolio()
+    
+    # Rafraîchissement automatique natif Python - Solution robuste
+    from streamlit_autorefresh import st_autorefresh
 
-    # Calculs pour les statistiques
-    now = datetime.now()
-    decisions_24h = len(
-        [
-            d
-            for d in decisions
-            if datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
-            > now - timedelta(hours=24)
-        ]
-    )
-    achats_24h = len(
-        [
-            d
-            for d in decisions
-            if d["action"] == "ACHETER"
-            and datetime.fromisoformat(d["analyzed_at"].replace("Z", "+00:00"))
-            > now - timedelta(hours=24)
-        ]
-    )
+    # Configure le composant pour rafraîchir la page toutes les 60 secondes (60000 millisecondes)
+    # On peut aussi ajouter un compteur visuel si on le souhaite.
+    st_autorefresh(interval=60 * 1000, key="price_refresher")
 
-    with stat_col1:
-        st.metric("Statut Système", "🟢 Opérationnel")
-
-    with stat_col2:
-        st.metric("Décisions 24h", decisions_24h)
-
-    with stat_col3:
-        st.metric("Signaux ACHAT 24h", achats_24h)
-
-    st.markdown("---")
-
-    # === FLUX PRINCIPAL ===
-    if decisions:
-        st.markdown("### 📈 Flux de Décisions avec Suivi de Performance")
-
-        for decision in decisions:
-            display_decision_card(decision)
-            st.markdown("")  # Espace entre les cartes
-    else:
-        st.info("📊 Aucune décision à afficher pour le moment.")
-        st.markdown(
-            "Lancez le monitoring pour commencer à générer des décisions : `python start_realtime_monitor.py`"
-        )
+    # Ajouter un indicateur visuel pour l'utilisateur
+    st.markdown("""
+        <div style="position: fixed; bottom: 10px; right: 15px; padding: 6px 12px; background: rgba(0, 0, 0, 0.6); color: white; border-radius: 8px; font-family: monospace; font-size: 12px; z-index: 9999;">
+            Auto-Refresh: 60s
+        </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
@@ -5842,11 +5317,12 @@ import sys
 from datetime import datetime
 from typing import Any, TypedDict
 
+import yfinance as yf
 from langchain_core.output_parsers import JsonOutputParser
-from pydantic import BaseModel, Field
 
 # LangGraph Imports
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, Field
 
 from agents import (
     AGENT_PROFILES,
@@ -5885,7 +5361,7 @@ class GraphState(TypedDict):
 class InvestmentDecision(BaseModel):
     """Modèle pour valider la décision finale d'investissement."""
 
-    decision: str = Field(description="ACHETER, VENDRE, SURVEILLER ou IGNORER")
+    decision: str = Field(description="LONG (pari sur la hausse), SHORT (pari sur la baisse), SURVEILLER ou IGNORER")
     ticker: str = Field(description="Ticker de l'action concernée ou null")
     confiance: str = Field(description="ÉLEVÉE, MOYENNE ou FAIBLE")
     horizon: str = Field(description="Court Terme, Moyen Terme, ou Long Terme")
@@ -5895,6 +5371,60 @@ class InvestmentDecision(BaseModel):
     )
     points_cles_positifs: list[str] = Field(description="Points positifs clés")
     points_cles_negatifs_risques: list[str] = Field(description="Risques identifiés")
+
+
+# --- FONCTION DE CAPTURE DE PRIX ---
+
+
+def get_live_price(ticker: str) -> float:
+    """Récupère le prix le plus récent disponible pour un ticker avec des fallbacks robustes."""
+    ticker = ticker.strip().replace("$", "")
+    if not ticker:
+        print(f"[WARN] Ticker vide ou invalide pour la capture de prix.")
+        return 0.0
+    try:
+        stock = yf.Ticker(ticker)
+        # 1. Tentative Intraday
+        print(f"[INFO] Tentative de récupération du prix intraday pour {ticker}...")
+        try:
+            data = stock.history(period="1d", interval="1m")
+            if not data.empty:
+                price = float(data["Close"].iloc[-1])
+                print(f"[INFO] Prix intraday récupéré pour {ticker}: {price}")
+                return price
+            else:
+                print(f"[WARN] Pas de données intraday pour {ticker}.")
+        except Exception as e:
+            print(f"[WARN] Échec récupération intraday pour {ticker}: {e}")
+        # 2. Tentative via stock.info
+        print(f"[INFO] Tentative de récupération du prix via info pour {ticker}...")
+        try:
+            info = stock.info
+            price = info.get("regularMarketPrice") or info.get("currentPrice")
+            if price:
+                print(f"[INFO] Prix info récupéré pour {ticker}: {price}")
+                return float(price)
+            else:
+                print(f"[WARN] Pas de prix dans info pour {ticker}.")
+        except Exception as e:
+            print(f"[WARN] Échec récupération info pour {ticker}: {e}")
+        # 3. Tentative Historique 5j
+        print(f"[INFO] Tentative de récupération du prix historique (5j) pour {ticker}...")
+        try:
+            hist = stock.history(period="5d")
+            if not hist.empty:
+                price = float(hist["Close"].iloc[-1])
+                print(f"[INFO] Prix historique récupéré pour {ticker}: {price}")
+                return price
+            else:
+                print(f"[WARN] Pas de données historiques pour {ticker}.")
+        except Exception as e:
+            print(f"[WARN] Échec récupération historique pour {ticker}: {e}")
+        print(f"[WARN] Impossible de récupérer le prix pour {ticker} après tous les fallbacks.")
+        return 0.0
+    except Exception as e:
+        print(f"[WARN] Exception inattendue lors de la récupération du prix pour {ticker}: {e}")
+        return 0.0
 
 
 # --- FONCTIONS UTILITAIRES ---
@@ -5975,27 +5505,46 @@ def node_find_actionable_tickers(state: GraphState) -> GraphState:
             full_article_text=state["full_article_text"],
         )
 
-        actionable_tickers = ticker_result.get("tickers_identifies", [])
-        state["actionable_tickers"] = actionable_tickers
+        raw_tickers = ticker_result.get("tickers_identifies", [])
+        
+        if not raw_tickers:
+            log_step(state, "⚠️  Aucun ticker actionnable identifié par l'IA.")
+            state["actionable_tickers"] = []
+            return state
 
-        if actionable_tickers:
-            log_step(
-                state,
-                f"🎯 {len(actionable_tickers)} ticker(s) actionnable(s) identifié(s)",
-            )
-            for ticker_info in actionable_tickers:
-                # Gestion des objets Pydantic ET des dictionnaires
-                if hasattr(ticker_info, "ticker"):
-                    ticker = ticker_info.ticker
-                    company = ticker_info.nom_entreprise
+        log_step(state, f"🔬 {len(raw_tickers)} ticker(s) brut(s) identifié(s). Validation en cours...")
+        
+        validated_tickers = []
+        for ticker_info in raw_tickers:
+            # Gestion des Pydantic/dict
+            ticker_symbol = ticker_info.ticker if hasattr(ticker_info, 'ticker') else ticker_info.get("ticker", "")
+            
+            # 1. Nettoyage (déjà fait dans agents.py mais redondance sécuritaire)
+            clean_ticker = ticker_symbol.strip().replace("$", "")
+
+            # 2. Vérification de viabilité avec yfinance (L'AJOUT CRUCIAL)
+            try:
+                stock = yf.Ticker(clean_ticker)
+                # On fait un appel très léger juste pour voir si le ticker existe
+                info = stock.info
+                if not info or info.get('regularMarketPrice') is None and info.get('currentPrice') is None:
+                    raise ValueError("Ticker non trouvé ou sans données de prix.")
+                
+                log_step(state, f"✅ Ticker '{clean_ticker}' validé avec yfinance.")
+                
+                # Mettre à jour le ticker nettoyé dans l'objet
+                if hasattr(ticker_info, 'ticker'):
+                    ticker_info.ticker = clean_ticker
                 else:
-                    ticker = ticker_info.get("ticker", "N/A")
-                    company = ticker_info.get("nom_entreprise", "N/A")
-                log_step(state, f"   → {ticker} ({company})")
-        else:
-            log_step(
-                state, "⚠️  Aucun ticker actionnable identifié - Pipeline orienté macro"
-            )
+                    ticker_info['ticker'] = clean_ticker
+
+                validated_tickers.append(ticker_info)
+
+            except Exception as e:
+                log_step(state, f"❌ Ticker '{clean_ticker}' REJETÉ après validation yfinance. Raison: {e}")
+
+        state["actionable_tickers"] = validated_tickers
+        log_step(state, f"🎯 {len(validated_tickers)} ticker(s) final(aux) après validation.")
 
     except Exception as e:
         log_step(state, f"❌ ERREUR dans le Ticker Hunter: {str(e)}")
@@ -6084,21 +5633,35 @@ def node_route_to_agents(state: GraphState) -> GraphState:
 
         else:
             # Mode FALLBACK : Analyse macro classique
-            entities = state["initial_analysis"].get("entites", [])
-            team = route_to_agents(entities, state["news_summary"])
-            log_step(state, "⚠️ Mode FALLBACK - Pas de tickers, analyse macro")
-
-        if not team:
-            raise ValueError("Aucun agent recruté par le routeur")
+            team = [
+                {
+                    "agent_type": "strategiste_geopolitique",
+                    "focus": "Analyse macroéconomique générale de la situation"
+                }
+            ]
+            log_step(state, "⚠️ Aucun ticker actionnable, fallback sur agent macro.")
 
         state["agent_team"] = team
 
-        log_step(state, f"✅ Équipe recrutée: {len(team)} agent(s)")
+        # --- DÉBUT DE LA MODIFICATION ---
+        # Filet de sécurité : Si, pour une raison quelconque, aucun agent n'est
+        # recruté en mode fallback, on assigne un stratège géopolitique par défaut.
+        if not team:
+            log_step(state, "⚠️ Aucun agent recruté. Assignation d'un agent par défaut pour éviter l'échec.")
+            state["agent_team"] = [
+                {
+                    "agent_type": "strategiste_geopolitique",
+                    "focus": "Analyse macroéconomique générale de la situation"
+                }
+            ]
+        # --- FIN DE LA MODIFICATION ---
+
+        log_step(state, f"✅ Équipe recrutée: {len(state['agent_team'])} agent(s)")
         for agent in team:
             log_step(state, f"   - {agent['agent_type']} → Focus: {agent['focus']}")
 
     except Exception as e:
-        log_step(state, f"❌ ERREUR dans le routage: {str(e)}")
+        log_step(state, f"❌ ERREUR dans le routage des agents: {str(e)}")
         state["agent_team"] = []
 
     return state
@@ -6321,24 +5884,39 @@ def node_final_investor_decision(state: GraphState) -> GraphState:
             decision_dict = decision_obj
         # --- FIN DE LA CORRECTION ---
 
+        # --- NOUVEAU : CAPTURE DU PRIX AU MOMENT DE LA DÉCISION ---
+        decision_ticker = decision_dict.get("ticker")
+        prix_au_moment_decision = 0.0
+        if decision_ticker:
+            log_step(state, f"💰 Capture du prix live pour {decision_ticker}...")
+            prix_au_moment_decision = get_live_price(decision_ticker)
+            if prix_au_moment_decision > 0:
+                log_step(state, f"✅ Prix capturé : {prix_au_moment_decision:.2f} USD")
+            else:
+                log_step(state, f"⚠️  Impossible de capturer le prix pour {decision_ticker}")
+
+        # NOUVEAU : On ajoute le prix "gravé" à la décision
+        decision_dict["prix_a_la_decision"] = prix_au_moment_decision
+        # --- FIN DE LA CAPTURE DE PRIX ---
+
         # --- DÉBUT DE LA CORRECTION LOGIQUE ---
-        # Si la décision est d'acheter mais que l'allocation est nulle,
+        # Si la décision est LONG mais que l'allocation est nulle,
         # la confiance est insuffisante. On ramène la décision à SURVEILLER.
         if (
-            decision_dict.get("decision") == "ACHETER"
+            decision_dict.get("decision") == "LONG"
             and decision_dict.get("allocation_capital_pourcentage", 0.0) == 0.0
         ):
 
             log_step(
                 state,
-                "⚠️  INCOHÉRENCE DÉTECTÉE: ACHAT avec 0% d'allocation. Décision rétrogradée à SURVEILLER.",
+                "⚠️  INCOHÉRENCE DÉTECTÉE: LONG avec 0% d'allocation. Décision rétrogradée à SURVEILLER.",
             )
 
             # Rétrograder la décision
             decision_dict["decision"] = "SURVEILLER"
             decision_dict["confiance"] = "FAIBLE"  # Forcer la confiance à FAIBLE
             decision_dict["justification_synthetique"] = (
-                f"[Rétrogradé] Signal d'achat détecté mais confiance insuffisante pour une allocation de capital. {decision_dict.get('justification_synthetique', '')}"
+                f"[Rétrogradé] Signal LONG détecté mais confiance insuffisante pour une allocation de capital. {decision_dict.get('justification_synthetique', '')}"
             )
         # --- FIN DE LA CORRECTION LOGIQUE ---
 
@@ -6518,7 +6096,6 @@ def display_final_results(final_state: dict[str, Any]) -> None:
 
 def test_pipeline():
     """Fonction de test avec des exemples d'articles."""
-
 
     print("🧪 MODE TEST - Sélection automatique d'un article récent")
 

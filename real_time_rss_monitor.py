@@ -296,9 +296,9 @@ class RealTimeRSSMonitor:
                 decision = result["final_decision"]
                 action = decision.get("decision", "INCONNU")
 
-                if action == "ACHETER":
+                if action in ["LONG", "ACHETER"]:  # Compatibilité avec anciennes données
                     self.log(
-                        f"🚀 ACHAT IDENTIFIÉ: {article['title'][:50]}...", "SUCCESS"
+                        f"🚀 SIGNAL LONG IDENTIFIÉ: {article['title'][:50]}...", "SUCCESS"
                     )
                     ticker = decision.get("ticker_cible", "N/A")
                     allocation = decision.get("allocation_pourcentage", 0)

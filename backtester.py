@@ -71,8 +71,8 @@ class BerzerkBacktester:
                 # Nouveau format : chercher dans 'action'
                 action = decision.get("action", "").upper()
 
-                # Vérifier si c'est une décision d'ACHAT
-                if action in ["ACHETER", "ACHAT", "BUY"]:
+                # Vérifier si c'est une décision d'ACHAT/LONG
+                if action in ["LONG", "ACHETER", "ACHAT", "BUY"]:
                     ticker = decision.get("ticker")
 
                     if ticker:  # Seulement si on a un ticker valide
@@ -94,10 +94,10 @@ class BerzerkBacktester:
                             }
                         )
                         print(
-                            f"✅ Décision d'ACHAT trouvée: {ticker} ({title[:30]}...)"
+                            f"✅ Décision LONG/ACHAT trouvée: {ticker} ({title[:30]}...)"
                         )
                     else:
-                        print(f"⚠️  Décision d'ACHAT sans ticker: {title[:30]}...")
+                        print(f"⚠️  Décision LONG/ACHAT sans ticker: {title[:30]}...")
                 else:
                     print(f"📊 Décision {action}: {title[:30]}...")
 
@@ -106,7 +106,7 @@ class BerzerkBacktester:
             except Exception as e:
                 print(f"❌ Erreur lors du traitement de l'article {article_id}: {e}")
 
-        print(f"\n📈 {len(buy_decisions)} décision(s) d'ACHAT trouvée(s)")
+        print(f"\n📈 {len(buy_decisions)} décision(s) LONG/ACHAT trouvée(s)")
         return buy_decisions
 
     def get_next_trading_day(self, date: datetime) -> datetime:

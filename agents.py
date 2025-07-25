@@ -184,14 +184,17 @@ Réponds IMPÉRATIVEMENT au format JSON suivant, et rien d'autre. Si aucune acti
     ]
 }}
 
-**RÈGLES CRITIQUES :**
-- Seules les entreprises publiques avec des tickers boursiers réels (NYSE, NASDAQ, etc.)
-- Un ticker est une courte chaîne de 1 à 5 lettres majuscules (ex: GOOGL, MSFT), parfois avec un suffixe de marché (ex: .HK, .PA).
-- Le ticker ne doit JAMAIS contenir de '$', d'espaces ou être une phrase.
+**RÈGLES CRITIQUES ABSOLUES :**
+- **FORMAT :** Le ticker est une chaîne de 1 à 5 lettres MAJUSCULES, parfois suivi d'un point et d'un suffixe de marché (ex: .PA, .DE). Exemples de tickers valides: 'AAPL', 'MSFT', 'AIR.PA'.
+- **INTERDIT :** Le ticker ne doit JAMAIS contenir de '$', d'espaces, de minuscules, ou être une phrase descriptive. 'CRYPTO_INDEX' ou '$TSLA' sont INVALIDE.
+- **INTERDIT :** Ne retourne jamais un nom de place de marché (ex: 'XETRA', 'NASDAQ') ou un indice (ex: 'S&P 500') comme ticker.
+- **SOURCE :** Uniquement des entreprises cotées sur des bourses majeures (NYSE, NASDAQ, Euronext, etc.).
+- **FOCUS :** Si la news parle d'une entreprise non cotée (ex: Discord, une startup), tu ne dois PAS l'identifier. Ta mission est de trouver des tickers **tradables**.
+- **SI AUCUN TICKER VALIDE :** Retourne impérativement une liste vide `[]`. Ne tente pas d'inventer un ticker.
+- **VÉRIFICATION :** Avant de proposer un ticker, assure-toi mentalement qu'il correspond à une entreprise spécifique et non à un concept général ou une place de marché. Vérifie qu'il existe réellement en bourse.
 - Impact direct et mesurable sur le business
 - Justification factuelle basée sur le contenu de l'article
 - Maximum 5 tickers pour rester focus
-- Si aucun ticker n'est clairement identifiable, retourne une liste vide
 """,
 )
 
@@ -333,15 +336,18 @@ Ta mission est de prendre la décision finale d'investissement basée sur le rap
 **TACHE FINALE :**
 Sur la base EXCLUSIVE des informations ci-dessus, produis une décision d'investissement structurée au format JSON. Ne rien ajouter d'autre.
 
+**NOUVELLE RÈGLE STRATÉGIQUE :**
+- Si plusieurs analyses d'actions sont positives (par exemple, plusieurs recommandations d'ACHAT), ta mission est de **sélectionner la MEILLEURE et UNIQUE opportunité**. Compare la clarté du signal, la conviction de l'analyse et l'impact direct de la news. Justifie brièvement ton choix dans la `justification_synthetique`. Ignore les autres opportunités.
+
 **PRIORITÉ :** Concentre-toi sur les tickers spécifiques identifiés par le Ticker Hunter. Ignore les analyses macro générales.
 
 Le format JSON doit contenir les clés suivantes :
-- "decision": "ACHETER", "VENDRE", "SURVEILLER" ou "IGNORER".
-- "ticker": Le ticker de l'action concernée (string, ou null si IGNORER).
+- "decision": "LONG" (pari sur la hausse), "SHORT" (pari sur la baisse), "SURVEILLER" ou "IGNORER".
+- "ticker": Le ticker de l'action **sélectionnée** (string, ou null si IGNORER).
 - "confiance": "ÉLEVÉE", "MOYENNE", "FAIBLE" (string).
 - "horizon": "Court Terme", "Moyen Terme", ou "Long Terme". DÉDUIS-LE du rapport.
 - "justification_synthetique": Une phrase unique et directe expliquant la décision.
-- "allocation_capital_pourcentage": Le pourcentage du capital disponible à allouer à ce trade (nombre flottant, de 0.0 à 5.0). Allouer 0 si la décision n'est pas "ACHETER". Une allocation typique pour une confiance MOYENNE est 1%, ÉLEVÉE est 2-3%.
+- "allocation_capital_pourcentage": Le pourcentage du capital disponible à allouer à ce trade (nombre flottant, de 0.0 à 5.0). Allouer 0 si la décision n'est pas "LONG". Une allocation typique pour une confiance MOYENNE est 1%, ÉLEVÉE est 2-3%.
 - "points_cles_positifs": Une liste de 2-3 points clés positifs tirés du rapport.
 - "points_cles_negatifs_risques": Une liste de 2-3 risques ou points négatifs tirés du rapport.
 """,
@@ -557,20 +563,42 @@ def run_ticker_hunter(
             {"news_summary": news_summary, "full_article_text": full_article_text}
         )
 
-        tickers_found = result.get("tickers_identifies", [])
-        print(f"✅ Ticker Hunter : {len(tickers_found)} ticker(s) identifié(s)")
-
-        if tickers_found:
-            for ticker_info in tickers_found:
-                # Gestion des objets Pydantic ET des dictionnaires
+        tickers_bruts = result.get("tickers_identifies", [])
+        
+        # --- DÉBUT DE LA MODIFICATION : VALIDATION ET NETTOYAGE ---
+        tickers_valides = []
+        if tickers_bruts:
+            print(f"🔬 Ticker Hunter a retourné {len(tickers_bruts)} ticker(s) bruts. Validation en cours...")
+            for ticker_info in tickers_bruts:
+                ticker = ""
+                # Gérer les objets Pydantic et les dictionnaires
                 if hasattr(ticker_info, "ticker"):
                     ticker = ticker_info.ticker
-                    company = ticker_info.nom_entreprise
                 else:
-                    ticker = ticker_info.get("ticker", "N/A")
-                    company = ticker_info.get("nom_entreprise", "N/A")
-                print(f"   🎯 {ticker} - {company}")
+                    ticker = ticker_info.get("ticker", "")
+                
+                # 1. Nettoyage initial : supprimer les '$' et les espaces
+                ticker_nettoye = ticker.strip().replace("$", "")
+                
+                # 2. Validation du format : lettres majuscules, points autorisés, longueur
+                import re
+                if re.match(r"^[A-Z]{1,6}(\.[A-Z]{2})?$", ticker_nettoye):
+                    # Le format est plausible, on le garde
+                    # On met à jour le ticker dans le dictionnaire/objet
+                    if hasattr(ticker_info, "ticker"):
+                        ticker_info.ticker = ticker_nettoye
+                    else:
+                        ticker_info['ticker'] = ticker_nettoye
+                    tickers_valides.append(ticker_info)
+                    print(f"    ✅ Ticker valide trouvé : {ticker_nettoye}")
+                else:
+                    print(f"    ❌ Ticker invalide rejeté : '{ticker}'")
+        
+        result['tickers_identifies'] = tickers_valides
+        # --- FIN DE LA MODIFICATION ---
 
+        print(f"🎯 Ticker Hunter : {len(tickers_valides)} ticker(s) final(aux) après validation.")
+        
         return result
 
     except Exception as e:

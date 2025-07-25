@@ -34,7 +34,7 @@ def diagnostic_db():
     print(f"\n🔍 Échantillon de {len(decisions)} décisions:")
     print("-" * 60)
 
-    achat_count = 0
+    long_count = 0
     for article_id, title, decision_json in decisions:
         print(f"\n📰 Article {article_id}: {title[:50]}...")
         try:
@@ -48,9 +48,9 @@ def diagnostic_db():
                 print(f"   🎯 Action: {action}")
                 print(f"   📈 Ticker: {ticker}")
 
-                if action and action.upper() == "ACHETER":
-                    achat_count += 1
-                    print("   ✅ DÉCISION D'ACHAT TROUVÉE!")
+                if action and action.upper() in ["LONG", "ACHETER"]:  # Compatibilité avec anciennes données
+                    long_count += 1
+                    print("   ✅ DÉCISION LONG/ACHAT TROUVÉE!")
 
             else:
                 print(f"   ⚠️  Format inattendu: {type(decision)}")
@@ -58,7 +58,7 @@ def diagnostic_db():
         except json.JSONDecodeError as e:
             print(f"   ❌ Erreur JSON: {e}")
 
-    print(f"\n📈 Résumé: {achat_count} décision(s) d'ACHAT trouvée(s)")
+    print(f"\n📈 Résumé: {long_count} décision(s) LONG/ACHAT trouvée(s)")
 
     conn.close()
 
