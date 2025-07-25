@@ -11,7 +11,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from orchestrator import run_berzerk_pipeline
+from orchestrator import run_berzerk_pipeline, send_telegram_notification
 
 
 def reset_analyses():
@@ -149,6 +149,33 @@ def analyze_articles(articles):
                         ticker = decision.get("ticker", "N/A")
                         allocation = decision.get("allocation_capital_pourcentage", 0)
                         print(f"🎯 Décision: {action} {ticker} ({allocation}%)")
+
+                        # --- DÉBUT DU TEMPLATE FINAL ---
+                        if action in ["LONG", "SHORT"]:
+                            ticker = decision.get("ticker", "N/A")
+                            prix_decision = decision.get("prix_a_la_decision", 0.0)
+                            confiance = decision.get("confiance", "INCONNUE")
+                            justification = decision.get("justification_synthetique", "N/A")
+                            article_link = link
+
+                            if action == "LONG":
+                                signal_color = "🟢"
+                                action_label = "ACHAT (LONG)"
+                            else: # SHORT
+                                signal_color = "🔴"
+                                action_label = "VENTE (SHORT)"
+                            
+                            message = (
+                                f"{signal_color} *SIGNAL DE TEST (RESET) BERZERK*\n\n"
+                                f"*{action_label}:* `{ticker}`\n"
+                                f"-----------------------------------\n"
+                                f"💰 *Prix d'Entrée:* `{prix_decision:.2f} $`\n"
+                                f"💪 *Confiance:* **{confiance.upper()}**\n\n"
+                                f"> {justification}\n\n"
+                                f"📰 [Lire l'article source]({article_link})"
+                            )
+                            send_telegram_notification(message)
+                        # --- FIN DU TEMPLATE FINAL ---
                 else:
                     print("❌ Échec de la sauvegarde")
             else:

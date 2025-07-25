@@ -34,6 +34,8 @@ from agents import (
 # Imports depuis nos modules existants
 from berzerk_lab import analyze_news_with_llm, get_article_text
 
+import os
+
 # --- DÉFINITION DE L'ÉTAT DU GRAPHE ---
 
 
@@ -123,6 +125,30 @@ def get_live_price(ticker: str) -> float:
     except Exception as e:
         print(f"[WARN] Exception inattendue lors de la récupération du prix pour {ticker}: {e}")
         return 0.0
+
+
+def send_telegram_notification(message: str):
+    """Envoie une notification Telegram via le bot configuré."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not bot_token or not chat_id:
+        print("[WARN] Variables Telegram manquantes : TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID non définies. Notification ignorée.")
+        return
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        import requests
+        response = requests.post(url, data=payload, timeout=10)
+        if response.status_code != 200:
+            print(f"[ERROR] Notification Telegram échouée : {response.status_code} - {response.text}")
+        else:
+            print("[INFO] Notification Telegram envoyée avec succès.")
+    except Exception as e:
+        print(f"[ERROR] Exception lors de l'envoi Telegram : {e}")
 
 
 # --- FONCTIONS UTILITAIRES ---
