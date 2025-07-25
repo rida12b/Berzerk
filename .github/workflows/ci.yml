@@ -1,0 +1,79 @@
+name: BERZERK - CI & CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # --- JOB 1: Validation du code ---
+  validate-code:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Mise en place de Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: 3. Installation des dépendances
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-mock black ruff
+
+    - name: 4. Création du fichier .env pour la CI
+      run: |
+        echo "GOOGLE_API_KEY=${{ vars.GOOGLE_API_KEY }}" >> .env
+        echo "TAVILY_API_KEY=${{ vars.TAVILY_API_KEY }}" >> .env
+        echo "CI_ENV=true" >> .env
+
+    - name: 5. Vérification du formatage avec Black
+      run: black --check .
+
+    - name: 6. Linting avec Ruff
+      run: ruff check .
+
+    - name: 7. Exécution des tests avec Pytest
+      run: pytest
+
+  # --- JOB 2: Déploiement (uniquement si la validation réussit) ---
+  deploy-to-prod:
+    # 'needs' garantit que ce job ne se lance que si 'validate-code' a réussi
+    needs: validate-code
+    runs-on: ubuntu-latest
+    
+    # 'if' garantit que ce job ne se lance que pour un push sur main,
+    # et pas pour une pull request.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 1. Checkout du code
+      uses: actions/checkout@v4
+
+    - name: 2. Déploiement sur le serveur de production via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        script: |
+          cd /home/berzerk/app 
+          echo ">>> Mise à jour du code depuis Git..."
+          git pull origin main
+          echo ">>> Activation de l'environnement virtuel..."
+          source venv/bin/activate
+          echo ">>> Installation des dépendances..."
+          pip install -r requirements.txt
+          echo ">>> Redémarrage du service de monitoring..."
+          sudo systemctl restart berzerk-monitor
+          echo ">>> Déploiement terminé avec succès !"
