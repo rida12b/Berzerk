@@ -74,175 +74,6 @@ tests/unit/test_agents.py
 <files>
 This section contains the contents of the repository's files.
 
-<file path="deployment/CRON_INSTRUCTIONS.md">
-# ⚙️ Configuration du Rapport de Portefeuille Périodique
-
-Ce guide explique comment configurer une tâche planifiée (`cron job`) sur votre VPS pour recevoir un résumé de votre portefeuille BERZERK toutes les 6 heures sur Telegram.
-
-## 1. Se Connecter au VPS
-
-Connectez-vous à votre VPS avec votre utilisateur habituel (celui qui a les droits `sudo`).
-
-## 2. Ouvrir l'Éditeur Crontab
-
-Nous allons éditer les tâches planifiées pour l'utilisateur `berzerk` afin que le script s'exécute dans le bon environnement.
-
-```bash
-sudo crontab -u berzerk -e
-```
-
-Si c'est la première fois, il vous demandera de choisir un éditeur. Choisissez `nano` (généralement l'option 1), c'est le plus simple.
-
-## 3. Ajouter la Tâche Planifiée
-
-Allez tout à la fin du fichier et ajoutez la ligne suivante. Copiez-la exactement.
-
-```
-0 */6 * * * /home/berzerk/app/venv/bin/python /home/berzerk/app/send_portfolio_update.py
-```
-
-### Explication de la commande :
-
-- `0 */6 * * *` : C'est la planification. Elle signifie "Exécute à la minute 0, toutes les 6 heures, tous les jours". Le script tournera donc à 00:00, 06:00, 12:00, et 18:00.
-- `/home/berzerk/app/venv/bin/python` : C'est le chemin **absolu** vers l'interpréteur Python de votre environnement virtuel. C'est crucial pour que le script utilise les bonnes dépendances.
-- `/home/berzerk/app/send_portfolio_update.py` : C'est le chemin **absolu** vers le script que nous voulons exécuter.
-
-## 4. Sauvegarder et Quitter
-
-- Appuyez sur `Ctrl+X`.
-- Appuyez sur `Y` pour confirmer la sauvegarde.
-- Appuyez sur `Entrée` pour valider le nom du fichier.
-
-Vous devriez voir un message comme `crontab: installing new crontab`.
-
-C'est tout ! Votre rapporteur de portefeuille est maintenant configuré et s'exécutera automatiquement.
-</file>
-
-<file path="send_portfolio_update.py">
-import sqlite3
-import json
-import os
-from datetime import datetime
-import yfinance as yf
-
-# --- Fonction utilitaire : prix actuel ---
-def get_current_price(ticker: str) -> float:
-    ticker = ticker.strip().replace("$", "")
-    if not ticker:
-        return 0.0
-    try:
-        stock = yf.Ticker(ticker)
-        data = stock.history(period="1d", interval="1m")
-        if not data.empty:
-            return float(data["Close"].iloc[-1])
-        info = stock.info
-        price = info.get("regularMarketPrice") or info.get("currentPrice")
-        if price:
-            return float(price)
-        hist = stock.history(period="5d")
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
-        return 0.0
-    except Exception:
-        return 0.0
-
-# --- Fonction utilitaire : notification Telegram ---
-def send_telegram_notification(message: str):
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if not bot_token or not chat_id:
-        print("[WARN] Variables Telegram manquantes : TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID non définies. Notification ignorée.")
-        return
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        import requests
-        response = requests.post(url, data=payload, timeout=10)
-        if response.status_code != 200:
-            print(f"[ERROR] Notification Telegram échouée : {response.status_code} - {response.text}")
-        else:
-            print("[INFO] Notification Telegram envoyée avec succès.")
-    except Exception as e:
-        print(f"[ERROR] Exception lors de l'envoi Telegram : {e}")
-
-# --- Extraction des positions actives ---
-def fetch_active_positions():
-    conn = sqlite3.connect("berzerk.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT decision_json FROM articles
-        WHERE decision_json IS NOT NULL
-        AND (json_extract(decision_json, '$.decision') = 'LONG' OR json_extract(decision_json, '$.decision') = 'SHORT'
-             OR json_extract(decision_json, '$.action') = 'LONG' OR json_extract(decision_json, '$.action') = 'SHORT')
-    """)
-    rows = cursor.fetchall()
-    conn.close()
-    positions = []
-    for (decision_json,) in rows:
-        try:
-            data = json.loads(decision_json)
-            action = data.get("decision", data.get("action", "")).upper()
-            if action not in ["LONG", "SHORT"]:
-                continue
-            ticker = data.get("ticker", None)
-            if not ticker:
-                continue
-            prix_decision = float(data.get("prix_a_la_decision", 0.0))
-            positions.append({
-                "ticker": ticker,
-                "action": action,
-                "prix_decision": prix_decision,
-                "justification": data.get("justification_synthetique", data.get("justification", "")),
-                "analyzed_at": data.get("analyzed_at", ""),
-            })
-        except Exception as e:
-            print(f"[WARN] Erreur parsing JSON: {e}")
-    return positions
-
-# --- Génération du résumé Telegram ---
-def generate_portfolio_summary(positions):
-    if not positions:
-        return "⚪️ *Rapport de Portefeuille BERZERK* ⚪️\n\nAucune position active pour le moment."
-    header = "📊 *Rapport de Portefeuille BERZERK*\n\n"
-    table_header = "`Ticker   | Dir.  | Entrée | Actuel | P&L`\n"
-    table_rows = []
-    total_trades = len(positions)
-    win_trades = 0
-    total_pnl = 0
-    for pos in positions:
-        ticker = pos["ticker"]
-        action = pos["action"]
-        prix_decision = pos["prix_decision"]
-        prix_actuel = get_current_price(ticker)
-        pnl_pct = 0
-        if prix_decision > 0 and prix_actuel > 0:
-            if action == "LONG":
-                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
-            elif action == "SHORT":
-                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
-        total_pnl += pnl_pct
-        if pnl_pct >= 0:
-            win_trades += 1
-        pnl_emoji = "✅" if pnl_pct >= 0 else "🔻"
-        row = f"`{ticker:<8} | {action:<5} | {prix_decision:<6.2f} | {prix_actuel:<6.2f} | {pnl_pct:+.2f}% {pnl_emoji}`"
-        table_rows.append(row)
-    win_rate = (win_trades / total_trades) * 100 if total_trades else 0
-    avg_pnl = total_pnl / total_trades if total_trades else 0
-    summary = f"\n*Positions: {total_trades} | Taux de réussite: {win_rate:.1f}% | Perf. moyenne: {avg_pnl:+.2f}%*"
-    message = header + table_header + "\n".join(table_rows) + summary
-    return message
-
-if __name__ == "__main__":
-    positions = fetch_active_positions()
-    message = generate_portfolio_summary(positions)
-    print(message)
-    send_telegram_notification(message)
-</file>
-
 <file path="audit_decisions.csv">
 analyzed_at,ticker,prix_a_la_decision,decision
 2025-07-25T14:19:49.825054,,0.0,IGNORER
@@ -297,6 +128,50 @@ SyslogIdentifier=berzerk-monitor
 
 [Install]
 WantedBy=multi-user.target
+</file>
+
+<file path="deployment/CRON_INSTRUCTIONS.md">
+# ⚙️ Configuration du Rapport de Portefeuille Périodique
+
+Ce guide explique comment configurer une tâche planifiée (`cron job`) sur votre VPS pour recevoir un résumé de votre portefeuille BERZERK toutes les 6 heures sur Telegram.
+
+## 1. Se Connecter au VPS
+
+Connectez-vous à votre VPS avec votre utilisateur habituel (celui qui a les droits `sudo`).
+
+## 2. Ouvrir l'Éditeur Crontab
+
+Nous allons éditer les tâches planifiées pour l'utilisateur `berzerk` afin que le script s'exécute dans le bon environnement.
+
+```bash
+sudo crontab -u berzerk -e
+```
+
+Si c'est la première fois, il vous demandera de choisir un éditeur. Choisissez `nano` (généralement l'option 1), c'est le plus simple.
+
+## 3. Ajouter la Tâche Planifiée
+
+Allez tout à la fin du fichier et ajoutez la ligne suivante. Copiez-la exactement.
+
+```
+0 */6 * * * /home/berzerk/app/venv/bin/python /home/berzerk/app/send_portfolio_update.py
+```
+
+### Explication de la commande :
+
+- `0 */6 * * *` : C'est la planification. Elle signifie "Exécute à la minute 0, toutes les 6 heures, tous les jours". Le script tournera donc à 00:00, 06:00, 12:00, et 18:00.
+- `/home/berzerk/app/venv/bin/python` : C'est le chemin **absolu** vers l'interpréteur Python de votre environnement virtuel. C'est crucial pour que le script utilise les bonnes dépendances.
+- `/home/berzerk/app/send_portfolio_update.py` : C'est le chemin **absolu** vers le script que nous voulons exécuter.
+
+## 4. Sauvegarder et Quitter
+
+- Appuyez sur `Ctrl+X`.
+- Appuyez sur `Y` pour confirmer la sauvegarde.
+- Appuyez sur `Entrée` pour valider le nom du fichier.
+
+Vous devriez voir un message comme `crontab: installing new crontab`.
+
+C'est tout ! Votre rapporteur de portefeuille est maintenant configuré et s'exécutera automatiquement.
 </file>
 
 <file path="deployment/README.md">
@@ -371,18 +246,6 @@ Le système CI/CD fonctionne ainsi :
 2. **Tests & Linting** → Validation automatique de la qualité
 3. **Déploiement** → Si CI réussie, déploiement automatique
 4. **Redémarrage services** → Application des changements
-</file>
-
-<file path="env.example">
-# Clé API pour Google Gemini
-GOOGLE_API_KEY="votre_clé_ici"
-
-# Clé API pour Tavily Search
-TAVILY_API_KEY="votre_clé_ici" 
-# Token pour le bot Telegram
-TELEGRAM_BOT_TOKEN="votre_token_ici"
-# ID du chat Telegram où envoyer les notifications
-TELEGRAM_CHAT_ID="votre_chat_id_ici"
 </file>
 
 <file path="export_decisions_audit.py">
@@ -655,6 +518,134 @@ Cette approche fait de BERZERK non pas un simple co-pilote d'analyse, mais une v
 This project is licensed under the MIT License. See the LICENSE file for details.
 </file>
 
+<file path="send_portfolio_update.py">
+from dotenv import load_dotenv
+import sqlite3
+import json
+import os
+from datetime import datetime
+import yfinance as yf
+
+load_dotenv()
+
+# --- Fonction utilitaire : prix actuel ---
+def get_current_price(ticker: str) -> float:
+    ticker = ticker.strip().replace("$", "")
+    if not ticker:
+        return 0.0
+    try:
+        stock = yf.Ticker(ticker)
+        data = stock.history(period="1d", interval="1m")
+        if not data.empty:
+            return float(data["Close"].iloc[-1])
+        info = stock.info
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
+        if price:
+            return float(price)
+        hist = stock.history(period="5d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+        return 0.0
+    except Exception:
+        return 0.0
+
+# --- Fonction utilitaire : notification Telegram ---
+def send_telegram_notification(message: str):
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not bot_token or not chat_id:
+        print("[WARN] Variables Telegram manquantes : TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID non définies. Notification ignorée.")
+        return
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        import requests
+        response = requests.post(url, data=payload, timeout=10)
+        if response.status_code != 200:
+            print(f"[ERROR] Notification Telegram échouée : {response.status_code} - {response.text}")
+        else:
+            print("[INFO] Notification Telegram envoyée avec succès.")
+    except Exception as e:
+        print(f"[ERROR] Exception lors de l'envoi Telegram : {e}")
+
+# --- Extraction des positions actives ---
+def fetch_active_positions():
+    conn = sqlite3.connect("berzerk.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT decision_json FROM articles
+        WHERE decision_json IS NOT NULL
+        AND (json_extract(decision_json, '$.decision') = 'LONG' OR json_extract(decision_json, '$.decision') = 'SHORT'
+             OR json_extract(decision_json, '$.action') = 'LONG' OR json_extract(decision_json, '$.action') = 'SHORT')
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    positions = []
+    for (decision_json,) in rows:
+        try:
+            data = json.loads(decision_json)
+            action = data.get("decision", data.get("action", "")).upper()
+            if action not in ["LONG", "SHORT"]:
+                continue
+            ticker = data.get("ticker", None)
+            if not ticker:
+                continue
+            prix_decision = float(data.get("prix_a_la_decision", 0.0))
+            positions.append({
+                "ticker": ticker,
+                "action": action,
+                "prix_decision": prix_decision,
+                "justification": data.get("justification_synthetique", data.get("justification", "")),
+                "analyzed_at": data.get("analyzed_at", ""),
+            })
+        except Exception as e:
+            print(f"[WARN] Erreur parsing JSON: {e}")
+    return positions
+
+# --- Génération du résumé Telegram ---
+def generate_portfolio_summary(positions):
+    if not positions:
+        return "⚪️ *Rapport de Portefeuille BERZERK* ⚪️\n\nAucune position active pour le moment."
+    header = "📊 *Rapport de Portefeuille BERZERK*\n\n"
+    table_header = "`Ticker   | Dir.  | Entrée | Actuel | P&L`\n"
+    table_rows = []
+    total_trades = len(positions)
+    win_trades = 0
+    total_pnl = 0
+    for pos in positions:
+        ticker = pos["ticker"]
+        action = pos["action"]
+        prix_decision = pos["prix_decision"]
+        prix_actuel = get_current_price(ticker)
+        pnl_pct = 0
+        if prix_decision > 0 and prix_actuel > 0:
+            if action == "LONG":
+                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
+            elif action == "SHORT":
+                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+        total_pnl += pnl_pct
+        if pnl_pct >= 0:
+            win_trades += 1
+        pnl_emoji = "✅" if pnl_pct >= 0 else "🔻"
+        row = f"`{ticker:<8} | {action:<5} | {prix_decision:<6.2f} | {prix_actuel:<6.2f} | {pnl_pct:+.2f}% {pnl_emoji}`"
+        table_rows.append(row)
+    win_rate = (win_trades / total_trades) * 100 if total_trades else 0
+    avg_pnl = total_pnl / total_trades if total_trades else 0
+    summary = f"\n*Positions: {total_trades} | Taux de réussite: {win_rate:.1f}% | Perf. moyenne: {avg_pnl:+.2f}%*"
+    message = header + table_header + "\n".join(table_rows) + summary
+    return message
+
+if __name__ == "__main__":
+    positions = fetch_active_positions()
+    message = generate_portfolio_summary(positions)
+    print(message)
+    send_telegram_notification(message)
+</file>
+
 <file path="tests/__init__.py">
 # Fichier marker pour le package de tests BERZERK
 </file>
@@ -874,6 +865,18 @@ logs/
 # Temporary files
 *.tmp
 *.temp" > .gitignore
+</file>
+
+<file path="env.example">
+# Clé API pour Google Gemini
+GOOGLE_API_KEY="votre_clé_ici"
+
+# Clé API pour Tavily Search
+TAVILY_API_KEY="votre_clé_ici" 
+# Token pour le bot Telegram
+TELEGRAM_BOT_TOKEN="votre_token_ici"
+# ID du chat Telegram où envoyer les notifications
+TELEGRAM_CHAT_ID="votre_chat_id_ici"
 </file>
 
 <file path="pyproject.toml">
@@ -3074,6 +3077,44 @@ if __name__ == "__main__":
     diagnostic_db()
 </file>
 
+<file path="requirements.txt">
+# Core dependencies
+streamlit>=1.30.0
+streamlit-autorefresh>=1.0.1
+langchain>=0.1.0
+langchain-google-genai>=0.0.6
+langchain-core>=0.1.0
+google-generativeai>=0.3.0
+python-dotenv>=1.0.0
+
+# Web scraping and RSS
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+feedparser>=6.0.0
+
+# Finance and data
+yfinance>=0.2.0
+pandas>=2.0.0
+
+# Search and tools
+tavily-python>=0.3.0
+
+# Additional tools
+langgraph>=0.0.30
+langsmith>=0.0.40
+
+# Utility
+pydantic>=2.0.0
+typing-extensions>=4.8.0
+
+# Development dependencies (for CI/CD)
+pytest>=7.0.0
+pytest-mock>=3.12.0
+black>=23.0.0
+ruff>=0.1.0 
+langchain_community
+</file>
+
 <file path="real_time_rss_monitor.py">
 #!/usr/bin/env python3
 """
@@ -3560,44 +3601,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-</file>
-
-<file path="requirements.txt">
-# Core dependencies
-streamlit>=1.30.0
-streamlit-autorefresh>=1.0.1
-langchain>=0.1.0
-langchain-google-genai>=0.0.6
-langchain-core>=0.1.0
-google-generativeai>=0.3.0
-python-dotenv>=1.0.0
-
-# Web scraping and RSS
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-feedparser>=6.0.0
-
-# Finance and data
-yfinance>=0.2.0
-pandas>=2.0.0
-
-# Search and tools
-tavily-python>=0.3.0
-
-# Additional tools
-langgraph>=0.0.30
-langsmith>=0.0.40
-
-# Utility
-pydantic>=2.0.0
-typing-extensions>=4.8.0
-
-# Development dependencies (for CI/CD)
-pytest>=7.0.0
-pytest-mock>=3.12.0
-black>=23.0.0
-ruff>=0.1.0 
-langchain_community
 </file>
 
 <file path="reset_and_analyze.py">
