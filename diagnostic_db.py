@@ -9,8 +9,53 @@ import json
 import sqlite3
 
 
+def setup_database():
+    """Crée les tables nécessaires si elles n'existent pas: trades et news_events."""
+    conn = sqlite3.connect("berzerk.db")
+    cursor = conn.cursor()
+
+    # Table trades (suivi des positions)
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id INTEGER,
+            ticker TEXT NOT NULL,
+            decision_type TEXT NOT NULL,
+            entry_at DATETIME NOT NULL,
+            entry_price REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'OPEN',
+            exit_at DATETIME,
+            exit_price REAL,
+            pnl_percent REAL,
+            FOREIGN KEY(article_id) REFERENCES articles(id)
+        )
+        """
+    )
+
+    # Table news_events (file d'attente inter-services)
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS news_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            news_title TEXT NOT NULL,
+            news_link TEXT NOT NULL,
+            detected_at DATETIME NOT NULL,
+            is_processed BOOLEAN NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
 def diagnostic_db():
     """Analyse le contenu de la base de données"""
+    # S'assurer que les tables nécessaires existent
+    setup_database()
+
     conn = sqlite3.connect("berzerk.db")
     cursor = conn.cursor()
 

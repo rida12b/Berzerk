@@ -12,6 +12,7 @@ Phase: 2.3 - Automatisation Complète
 """
 
 import sys
+import sqlite3
 from datetime import datetime
 from typing import Any, TypedDict
 
@@ -28,6 +29,7 @@ from agents import (
     route_to_agents,
     run_agent_analysis,
     run_pure_prediction_analysis,  # NOUVEAU : Agent de prédiction pure
+    run_market_context_analysis,
     run_ticker_hunter,
 )
 
@@ -173,6 +175,64 @@ def format_debriefing(agent_analyses: list[dict[str, str]]) -> str:
             f"{'='*80}"
         )
     return "\n".join(debriefing_parts)
+
+
+def get_performance_summary(ticker: str) -> str:
+    """Retourne un résumé de performance récent (5 derniers trades clôturés) pour un ticker.
+
+    - Si aucun trade n'est trouvé, retourne: "Aucun historique de trade pour ce ticker.".
+    - Sinon, calcule le taux de réussite et le P&L moyen.
+    """
+    ticker = (ticker or "").strip()
+    if not ticker:
+        return "Aucun historique de trade pour ce ticker."
+
+    conn = None
+    try:
+        conn = sqlite3.connect("berzerk.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT pnl_percent
+            FROM trades
+            WHERE ticker = ? AND status = 'CLOSED'
+            ORDER BY datetime(exit_at) DESC
+            LIMIT 5
+            """,
+            (ticker,),
+        )
+        rows = cursor.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    if not rows:
+        return "Aucun historique de trade pour ce ticker."
+
+    pnl_values = []
+    for (pnl,) in rows:
+        try:
+            pnl_values.append(float(pnl))
+        except Exception:
+            continue
+
+    if not pnl_values:
+        return "Aucun historique de trade pour ce ticker."
+
+    total = len(pnl_values)
+    winners = sum(1 for v in pnl_values if v > 0)
+    win_rate = (winners / total) * 100.0
+    avg_pnl = sum(pnl_values) / total
+
+    return (
+        f"Historique sur {total} derniers trades : "
+        f"Taux de réussite: {win_rate:.1f}%, P&L moyen: {avg_pnl:+.2f}%"
+    )
 
 
 # --- NŒUDS DU GRAPHE (chaque nœud est une fonction) ---
@@ -440,27 +500,27 @@ def node_run_agent_analyses(state: GraphState) -> GraphState:
                         f"🚀 Analyse PURE PREDICTION pour {ticker} (mode 'tac au tac')",
                     )
 
-                    # === MODIFICATION CLÉ ICI ===
-                    # Utiliser l'agent de pure prédiction sans données de prix
-                    analysis = run_pure_prediction_analysis(
+                    # Utiliser l'agent de pure prédiction puis le contexte marché
+                    analysis_prediction = run_pure_prediction_analysis(
                         ticker=ticker,
                         news_summary=state["news_summary"],
                         full_article_text=state["full_article_text"],
                     )
+                    analysis_context = run_market_context_analysis(ticker=ticker)
+                    combined_analysis = f"{analysis_prediction}\n\n{analysis_context}"
 
                     agent_analyses.append(
                         {
-                            "agent_type": agent["agent_type"]
-                            + "_pure_prediction",  # Marquer le mode
+                            "agent_type": "analyste_actions_avec_contexte",
                             "focus": agent["focus"],
-                            "analysis": analysis,
+                            "analysis": combined_analysis,
                             "ticker": ticker,
-                            "is_augmented": False,  # Il n'est plus "augmenté" avec des données de prix
+                            "is_augmented": False,
                         }
                     )
 
                     log_step(
-                        state, f"✅ Analyse PURE PREDICTION terminée pour {ticker}"
+                        state, f"✅ Analyses (prédiction + contexte marché) terminées pour {ticker}"
                     )
                 else:
                     # Fallback vers l'analyse classique
@@ -567,12 +627,16 @@ def node_final_investor_decision(state: GraphState) -> GraphState:
         # Création de la chaîne LangChain
         chain = investor_prompt | llm | parser
 
+        # Préparer le résumé de performance historique (initialement N/A)
+        historical_performance = "N/A"
+
         # Exécution de la décision
         decision_result = chain.invoke(
             {
                 "debriefing_equipe": state["agent_debriefing"],
                 "capital_disponible": state["capital_disponible"],
                 "actionable_tickers": tickers_summary,
+                "historical_performance": historical_performance,
             }
         )
 
@@ -610,6 +674,11 @@ def node_final_investor_decision(state: GraphState) -> GraphState:
 
         # --- NOUVEAU : CAPTURE DU PRIX AU MOMENT DE LA DÉCISION ---
         decision_ticker = decision_dict.get("ticker")
+        # Résumé de performance historique pour le ticker choisi
+        if decision_ticker:
+            historical_performance = get_performance_summary(ticker=decision_ticker)
+        else:
+            historical_performance = "N/A"
         prix_au_moment_decision = 0.0
         if decision_ticker:
             log_step(state, f"💰 Capture du prix live pour {decision_ticker}...")

@@ -12,6 +12,19 @@ Phase: 2 - Agents IA Spécialisés
 
 import yfinance as yf
 from dotenv import load_dotenv
+import sys as _sys
+
+# Impression robuste (évite les erreurs UnicodeEncodeError sur certaines consoles Windows)
+def _safe_print(message: str) -> None:
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        try:
+            encoding = _sys.stdout.encoding or "utf-8"
+            _sys.stdout.buffer.write((str(message) + "\n").encode(encoding, errors="ignore"))
+        except Exception:
+            # Dernier recours: ASCII sans caractères non supportés
+            print(str(message).encode("ascii", errors="ignore").decode("ascii", errors="ignore"))
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 
 # Imports pour les outils
@@ -34,9 +47,9 @@ try:
         temperature=0.3,
         # Le paramètre convert_system_message_to_human est maintenant géré automatiquement
     )
-    print("✅ LLM initialisé avec succès pour les agents IA")
+    _safe_print("✅ LLM initialisé avec succès pour les agents IA")
 except Exception as e:
-    print(f"❌ Erreur d'initialisation du LLM pour les agents: {e}")
+    _safe_print(f"❌ Erreur d'initialisation du LLM pour les agents: {e}")
     llm = None
 
 # --- OUTILS POUR AGENTS AUGMENTÉS ---
@@ -47,9 +60,9 @@ try:
         max_results=3,  # Limiter pour éviter la surcharge d'informations
         search_depth="basic",  # Recherche basique pour être plus rapide
     )
-    print("✅ Outil de recherche web (Tavily) initialisé")
+    _safe_print("✅ Outil de recherche web (Tavily) initialisé")
 except Exception as e:
-    print(f"❌ Erreur d'initialisation de Tavily: {e}")
+    _safe_print(f"❌ Erreur d'initialisation de Tavily: {e}")
     web_search_tool = None
 
 
@@ -115,7 +128,7 @@ def get_market_sentiment(ticker: str) -> str:
         return f"❌ Erreur sentiment marché pour {ticker}: {str(e)}"
 
 
-print("✅ Outils financiers (yfinance) initialisés")
+_safe_print("✅ Outils financiers (yfinance) initialisés")
 
 # --- MODÈLES PYDANTIC POUR LA VALIDATION ---
 
@@ -316,7 +329,7 @@ Produis une analyse géopolitique au format Markdown avec les sections suivantes
 
 # Agent Investisseur Final - Le superviseur qui prend la décision finale
 investisseur_final_template = PromptTemplate(
-    input_variables=["debriefing_equipe", "capital_disponible", "actionable_tickers"],
+    input_variables=["debriefing_equipe", "capital_disponible", "actionable_tickers", "historical_performance"],
     template="""
 Tu es l'Agent Investisseur en chef du fonds BERZERK. Tu es froid, logique, et uniquement guidé par la performance et la gestion du risque.
 
@@ -333,8 +346,18 @@ Ta mission est de prendre la décision finale d'investissement basée sur le rap
 **Contexte Financier Actuel :**
 - Capital total disponible pour de nouveaux trades : {capital_disponible} €
 
+**Performance Historique sur ce Ticker :**
+{historical_performance}
+---
+
 **TACHE FINALE :**
-Sur la base EXCLUSIVE des informations ci-dessus, produis une décision d'investissement structurée au format JSON. Ne rien ajouter d'autre.
+Ta mission est de prendre la décision finale la plus intelligente possible en intégrant TOUTES les informations : la prédiction, le contexte marché ET la performance historique.
+
+- Si la performance historique sur ce ticker est mauvaise (ex: < 50% de réussite ou P&L négatif), tu dois devenir EXTRÊMEMENT prudent. Réduis ta confiance (ex: pas plus haut que "MOYENNE") et ton allocation (ex: pas plus de 1%). Justifie ta prudence en mentionnant les mauvaises performances passées.
+- Si la performance est bonne, tu peux te permettre d'être plus confiant, mais reste discipliné.
+- Si l'historique est inexistant, base-toi sur la thèse et le contexte, mais avec une confiance modérée pour ce premier trade.
+
+Produis une décision PONDÉRÉE et structurée au format JSON.
 
 **NOUVELLE RÈGLE STRATÉGIQUE :**
 - Si plusieurs analyses d'actions sont positives (par exemple, plusieurs recommandations d'ACHAT), ta mission est de **sélectionner la MEILLEURE et UNIQUE opportunité**. Compare la clarté du signal, la conviction de l'analyse et l'impact direct de la news. Justifie brièvement ton choix dans la `justification_synthetique`. Ignore les autres opportunités.
@@ -353,6 +376,68 @@ Le format JSON doit contenir les clés suivantes :
 """,
 )
 
+# Market Context Analyst - Analyse technique et de sentiment sèche et factuelle
+market_context_template = PromptTemplate(
+    input_variables=["ticker"],
+    template="""
+Tu es un analyste quantitatif pour le fonds BERZERK. Ta mission est de fournir une analyse technique et de sentiment SÈCHE et FACTUELLE pour le ticker {ticker}, en ignorant toute autre information.
+
+Utilise tes outils pour répondre aux questions suivantes :
+1. Quel est le prix actuel et la tendance immédiate (dernière variation) ?
+2. Le volume de trading moyen est-il significatif ?
+3. Quelles sont les métriques clés de sentiment (Capitalisation, P/E ratio) ?
+
+Termine par une synthèse concise et structurée au format suivant, et rien d'autre :
+"**Synthèse Contexte Marché pour {ticker}:**
+- **Tendance immédiate:** [Prix actuel et variation, ex: 150.25 USD 📉 -1.50%]
+- **Liquidité:** [Volume moyen, ex: 80.5M]
+- **Valorisation:** [Capitalisation et P/E, ex: 2.5T USD, P/E 28.5]"
+"""
+)
+
+# Exit Strategist - Réévalue une position à la lumière de nouvelles informations
+exit_strategist_template = PromptTemplate(
+    input_variables=["ticker", "new_information_summary"],
+    template="""
+Tu es l'« Exit Strategist » du fonds BERZERK. Ta mission est de réévaluer la thèse initiale sur {ticker} à la lumière des nouvelles informations détectées et de proposer une action concrète de gestion de position.
+
+**NOUVELLE(S) INFORMATION(S) DÉTECTÉE(S) :**
+{new_information_summary}
+---
+
+Réévalue la position en intégrant ces éléments nouveaux. Indique clairement s'il faut:
+- Maintenir la position ouverte (et sous quelles conditions)
+- Réduire l'exposition (avec niveaux indicatifs)
+- Sortir immédiatement (avec justification principale)
+
+Fournis une recommandation concise, factuelle et actionnable (inclure risques clés et déclencheurs de sortie concrets).
+"""
+)
+
+# Investigative Analyst - Recherche d'informations complémentaires (web search expert)
+investigative_analyst_template = ChatPromptTemplate.from_messages([
+    ("system", """
+Tu es l'"Investigative Analyst" du fonds BERZERK, un détective financier expert en OSINT (Open Source Intelligence). Ta mission n'est PAS de donner une opinion, mais de trouver des FAITS et du CONTEXTE. Tu es neutre, factuel et rapide.
+
+Utilise ton outil de recherche web pour répondre aux questions suivantes de manière concise et structurée.
+"""),
+    ("user", """
+**News Initiale:** "{news_summary}"
+**Ticker principal:** {ticker}
+
+**TACHE D'ENQUÊTE :**
+Mène une enquête rapide (3 recherches maximum) pour répondre aux questions suivantes. Fournis des réponses courtes et directes sous forme de liste. Si tu ne trouves rien, indique "Non trouvé".
+
+1.  **Corroboration :** D'autres sources médiatiques majeures (Reuters, AP, WSJ) confirment-elles cette information ?
+2.  **Réaction des Concurrents :** Y a-t-il eu des annonces récentes similaires ou contraires de la part des principaux concurrents de {ticker} ?
+3.  **Sentiment des Experts :** Quel est le consensus général des analystes ou experts du secteur sur ce sujet spécifique (pas sur l'action en général) ?
+4.  **Angle Mort :** Y a-t-il un risque évident ou un point négatif que la news initiale semble omettre (ex: contexte réglementaire, difficultés techniques, etc.) ?
+
+Sois bref et va droit au but. Ton rapport sera utilisé par d'autres analystes.
+"""),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
 # Dictionnaire des profils d'agents
 AGENT_PROFILES = {
     "ticker_hunter": ticker_hunter_template,
@@ -360,6 +445,9 @@ AGENT_PROFILES = {
     "analyste_sectoriel": analyste_sectoriel_template,
     "strategiste_geopolitique": strategiste_geopolitique_template,
     "investisseur_final": investisseur_final_template,
+    "market_context": market_context_template,
+    "exit_strategist": exit_strategist_template,
+    "investigative_analyst": investigative_analyst_template,
 }
 
 # --- FONCTIONS PRINCIPALES ---
@@ -609,7 +697,10 @@ def run_ticker_hunter(
 # --- AGENTS AUGMENTÉS (AVEC OUTILS) ---
 
 
-def create_augmented_analyst(focus_ticker: str = None) -> AgentExecutor:
+def create_augmented_analyst(
+    focus_ticker: str = None,
+    custom_prompt: ChatPromptTemplate | None = None,
+) -> AgentExecutor:
     """
     Crée un agent analyste augmenté avec accès à des outils web et financiers.
 
@@ -636,7 +727,7 @@ def create_augmented_analyst(focus_ticker: str = None) -> AgentExecutor:
         f" Tu te concentres principalement sur {focus_ticker}." if focus_ticker else ""
     )
 
-    prompt = ChatPromptTemplate.from_messages(
+    default_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
@@ -665,7 +756,8 @@ def create_augmented_analyst(focus_ticker: str = None) -> AgentExecutor:
     )
 
     # Création de l'agent
-    agent = create_tool_calling_agent(llm, tools, prompt)
+    prompt_to_use = custom_prompt if custom_prompt is not None else default_prompt
+    agent = create_tool_calling_agent(llm, tools, prompt_to_use)
 
     # Création de l'exécuteur
     agent_executor = AgentExecutor(
@@ -838,6 +930,87 @@ def run_pure_prediction_analysis(
         return f"❌ **Erreur dans l'analyse de prédiction pure :** {str(e)}"
 
 
+# --- EXIT STRATEGIST ---
+
+
+def run_exit_strategist(ticker: str, new_relevant_news: str) -> str:
+    """Exécute l'agent Exit Strategist pour réévaluer une position.
+
+    Args:
+        ticker: Ticker concerné
+        new_relevant_news: Résumé des nouvelles informations détectées
+
+    Returns:
+        Recommandation actionnable sous forme de texte.
+    """
+    if not llm:
+        return "❌ **Erreur :** LLM non disponible pour l'Exit Strategist"
+
+    try:
+        chain = exit_strategist_template | llm
+        result = chain.invoke(
+            {
+                "ticker": ticker,
+                "new_information_summary": new_relevant_news,
+            }
+        )
+        return result.content if hasattr(result, "content") else str(result)
+    except Exception as e:
+        return f"❌ **Erreur Exit Strategist :** {str(e)}"
+
+
+# --- INVESTIGATIVE ANALYST ---
+
+
+def run_investigative_analysis(ticker: str, news_summary: str) -> str:
+    """Exécute l'analyse d'investigation (web OSINT) pour un ticker donné.
+
+    Utilise l'agent augmenté avec un prompt personnalisé `investigative_analyst_template`.
+    """
+    if not llm:
+        return "❌ **Erreur :** LLM non disponible pour l'Investigative Analyst"
+
+    try:
+        # Crée un agent augmenté sans focus spécifique et avec le prompt d'investigation
+        agent_executor = create_augmented_analyst(focus_ticker=None, custom_prompt=investigative_analyst_template)
+
+        # Invocation simple avec les variables requises par le template
+        result = agent_executor.invoke({
+            "input": "",  # non utilisé par notre template personnalisé
+            "ticker": ticker,
+            "news_summary": news_summary,
+        })
+
+        return result.get("output", "Erreur dans l'analyse d'investigation.")
+    except Exception as e:
+        return f"❌ **Erreur Investigative Analyst :** {str(e)}"
+
+# --- ANALYSE CONTEXTE MARCHÉ (AGENT AUGMENTÉ) ---
+
+
+def run_market_context_analysis(ticker: str) -> str:
+    """Exécute une analyse de contexte marché sèche et factuelle pour un ticker.
+
+    Cette fonction crée un agent augmenté (avec accès à get_stock_price et get_market_sentiment)
+    focalisé sur le ticker et lui demande une analyse concise du contexte de marché.
+
+    Args:
+        ticker: Le ticker à analyser
+
+    Returns:
+        La sortie de l'agent (string)
+    """
+    try:
+        agent_executor = create_augmented_analyst(focus_ticker=ticker)
+        simple_input = (
+            f"Fournis-moi l'analyse de contexte marché pour le ticker {ticker}."
+        )
+        result = agent_executor.invoke({"input": simple_input})
+        return result.get("output", "Erreur dans l'analyse de contexte marché.")
+    except Exception as e:
+        return f"❌ **Erreur dans l'analyse de contexte marché :** {str(e)}"
+
+
 # --- FONCTIONS UTILITAIRES ---
 
 
@@ -852,6 +1025,7 @@ def get_agent_description(agent_type: str) -> str:
         "analyste_actions": "Spécialisé dans l'analyse d'actions individuelles et de tickers spécifiques",
         "analyste_sectoriel": "Expert en analyse de secteurs d'activité et dynamiques industrielles",
         "strategiste_geopolitique": "Spécialisé dans l'analyse géopolitique et macroéconomique",
+        "exit_strategist": "Réévalue une position avec de nouvelles informations pour décider de la sortie",
     }
     return descriptions.get(agent_type, "Agent non reconnu")
 

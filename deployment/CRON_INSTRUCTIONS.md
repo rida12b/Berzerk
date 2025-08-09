@@ -39,3 +39,19 @@ Allez tout à la fin du fichier et ajoutez la ligne suivante. Copiez-la exacteme
 Vous devriez voir un message comme `crontab: installing new crontab`.
 
 C'est tout ! Votre rapporteur de portefeuille est maintenant configuré et s'exécutera automatiquement. 
+
+## 2. Configuration du Gestionnaire de Positions (Toutes les heures)
+
+Ce deuxième cron job est crucial: il ferme automatiquement les positions en fonction des règles définies (sortie automatique après 7 jours). Il s'exécute une fois par heure pour vérifier les positions ouvertes et clôturer celles qui dépassent la période de détention.
+
+Ajoutez la ligne suivante dans la crontab de l'utilisateur `berzerk` (même procédure que ci-dessus):
+
+```
+0 * * * * /home/berzerk/app/venv/bin/python /home/berzerk/app/position_manager.py
+```
+
+### Explication de la commande :
+
+- `0 * * * *` : planification « toutes les heures à la minute 0 » (00:00, 01:00, 02:00, ...).
+- `/home/berzerk/app/venv/bin/python` : interpréteur Python de l'environnement virtuel de l'app (garantit les bonnes dépendances).
+- `/home/berzerk/app/position_manager.py` : script responsable de la gestion et de la clôture automatique des positions (fermeture après 7 jours, calcul et enregistrement du P&L).

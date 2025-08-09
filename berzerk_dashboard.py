@@ -241,6 +241,36 @@ def load_decisions_from_db() -> list[dict[str, Any]]:
         return []
 
 
+@st.cache_data(ttl=30)
+def fetch_open_trades() -> list[dict]:
+    """Récupère les trades ouverts depuis la base SQLite.
+
+    Returns:
+        Liste de dictionnaires représentant les lignes de la table trades avec status 'OPEN'.
+    """
+    try:
+        conn = sqlite3.connect("berzerk.db")
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM trades
+            WHERE status = 'OPEN'
+            ORDER BY datetime(entry_at) DESC
+            """
+        )
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+    except Exception as e:
+        st.error(f"Erreur lors du chargement des positions ouvertes: {e}")
+        return []
+
+
 def get_sample_decisions() -> list[dict[str, Any]]:
     """Génère des décisions d'exemple pour la démonstration (avec données de performance)."""
     return [
@@ -530,16 +560,12 @@ def display_active_portfolio():
     """Affiche le portefeuille actif avec KPIs et tableau détaillé."""
     st.header("📊 Suivi du Portefeuille Actif")
     
-    decisions = load_decisions_from_db()
-    
-    # --- VÉRIFICATION CLÉ ---
-    # Ce filtrage fonctionnera maintenant grâce à la normalisation faite en Phase 1
-    active_positions = [d for d in decisions if d['action'] in ['LONG', 'SHORT']]
-    # --- FIN DE LA VÉRIFICATION ---
+    # Récupération des positions ouvertes depuis la table trades
+    active_positions = fetch_open_trades()
 
     if not active_positions:
-        st.warning("ℹ️ Aucune position LONG ou SHORT n'a été trouvée dans les décisions récentes.")
-        st.write("Le portefeuille actif s'affichera ici dès que de nouvelles positions de trading seront prises par l'IA.")
+        st.warning("ℹ️ Aucune position ouverte dans la table trades.")
+        st.write("Le portefeuille actif s'affichera ici dès qu'une nouvelle position sera créée (LONG/SHORT).")
         return
     
     # Calculer les KPIs globaux
@@ -547,14 +573,14 @@ def display_active_portfolio():
     winning_trades = 0
     
     for pos in active_positions:
-        prix_decision = pos.get("prix_decision", 0.0)
-        prix_actuel = pos.get("prix_actuel", 0.0)
+        entry_price = float(pos.get("entry_price", 0.0) or 0.0)
+        current_price = get_current_price(pos.get("ticker", ""))
         pnl_pct = 0
-        if prix_decision > 0 and prix_actuel > 0:
-            if pos['action'] == 'LONG':
-                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
-            elif pos['action'] == 'SHORT':
-                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+        if entry_price > 0 and current_price > 0:
+            if pos['decision_type'] == 'LONG':
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            elif pos['decision_type'] == 'SHORT':
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
         
         if pnl_pct > 0:
             winning_trades += 1
@@ -568,10 +594,10 @@ def display_active_portfolio():
     with kpi_cols[0]:
         st.metric("Positions Ouvertes", len(active_positions))
     with kpi_cols[1]:
-        long_count = len([p for p in active_positions if p['action'] == 'LONG'])
+        long_count = len([p for p in active_positions if p['decision_type'] == 'LONG'])
         st.metric("Positions LONG", long_count)
     with kpi_cols[2]:
-        short_count = len([p for p in active_positions if p['action'] == 'SHORT'])
+        short_count = len([p for p in active_positions if p['decision_type'] == 'SHORT'])
         st.metric("Positions SHORT", short_count)
     with kpi_cols[3]:
         st.metric("Taux de Réussite", f"{win_rate:.1f}%")
@@ -597,31 +623,32 @@ def display_active_portfolio():
 
     # Afficher chaque position
     for pos in active_positions:
-        prix_decision = pos.get("prix_decision", 0.0)
-        prix_actuel = pos.get("prix_actuel", 0.0)
+        entry_price = float(pos.get("entry_price", 0.0) or 0.0)
+        current_price = get_current_price(pos.get("ticker", ""))
         pnl_pct = 0
         
-        if prix_decision > 0 and prix_actuel > 0:
-            if pos['action'] == 'LONG':
-                pnl_pct = ((prix_actuel - prix_decision) / prix_decision) * 100
-            elif pos['action'] == 'SHORT':
-                pnl_pct = ((prix_decision - prix_actuel) / prix_decision) * 100
+        if entry_price > 0 and current_price > 0:
+            if pos['decision_type'] == 'LONG':
+                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+            elif pos['decision_type'] == 'SHORT':
+                pnl_pct = ((entry_price - current_price) / entry_price) * 100
 
         color = "green" if pnl_pct >= 0 else "red"
         
         row_cols = st.columns([1, 1, 2, 1.5, 1.5, 1.5])
-        row_cols[0].text(pos['ticker'])
-        row_cols[1].markdown(f"**<font color='{color_map[pos['action']]}'>{pos['action']}</font>**", unsafe_allow_html=True)
-        analyzed_dt = datetime.fromisoformat(pos["analyzed_at"].replace("Z", "+00:00"))
-        row_cols[2].text(analyzed_dt.strftime('%d/%m/%y %H:%M'))
-        row_cols[3].text(f"{prix_decision:.2f} $")
-        row_cols[4].text(f"{prix_actuel:.2f} $")
+        row_cols[0].text(pos.get('ticker', 'N/A'))
+        row_cols[1].markdown(
+            f"**<font color='{color_map.get(pos.get('decision_type', 'IGNORER'), '#6c757d')}'>{pos.get('decision_type', 'N/A')}</font>**",
+            unsafe_allow_html=True,
+        )
+        try:
+            entry_dt = datetime.fromisoformat(pos.get("entry_at", ""))
+            row_cols[2].text(entry_dt.strftime('%d/%m/%y %H:%M'))
+        except Exception:
+            row_cols[2].text("N/A")
+        row_cols[3].text(f"{entry_price:.2f} $")
+        row_cols[4].text(f"{current_price:.2f} $")
         row_cols[5].markdown(f"**<font color='{color}'>{pnl_pct:+.2f}%</font>**", unsafe_allow_html=True)
-        
-        # Ajouter un expander pour les détails du signal original
-        with st.expander(f"Voir détails pour {pos['ticker']}"):
-            st.write(f"**Signal original :** {pos['news_title']}")
-            st.write(f"**Justification IA :** {pos['justification']}")
 
 
 def main():

@@ -9,12 +9,16 @@ Objectif : Orchestration automatisée de décisions d'investissement IA avec tra
 - [x] Ajout de la clé `prix_a_la_decision` dans la structure de décision.
 - [x] Lecture et affichage du prix à la décision dans le dashboard (`berzerk_dashboard.py`).
 - [x] Affichage conditionnel de la performance et gestion des cas N/A.
+- [x] Ajout de l'agent "Market Context Analyst" (analyse technique et sentiment sèche) dans `agents.py` + fonction `run_market_context_analysis`.
+- [x] Intégration du contexte marché dans la décision finale via mise à jour du template `investisseur_final_template`.
 
 ## 3. Journal des Modifications
 - 2024-05-07 : Ajout de `get_live_price` robuste (fallback intraday, info, historique, gestion exceptions).
 - 2024-05-07 : Enrichissement de la décision avec le prix capturé dans `node_final_investor_decision`.
 - 2024-05-07 : Lecture de la clé `prix_a_la_decision` dans `load_decisions_from_db` et affichage dans `display_decision_card` et `display_active_portfolio`.
 - 2024-05-07 : Affichage conditionnel et aide utilisateur pour les cas où le prix n'est pas disponible.
+- 2025-08-09 : Création de l'agent `market_context` (PromptTemplate `market_context_template`) utilisant `get_stock_price` et `get_market_sentiment`. Ajout de `run_market_context_analysis(ticker)`.
+- 2025-08-09 : Mise à jour de `investisseur_final_template` pour contraindre l'arbitrage entre thèse prédictive et contexte marché et imposer une décision pondérée.
 
 ## 4. Suivi des Erreurs
 - Si le prix n'est pas capturé (0.0), affichage WARN dans la console et "N/A" dans le dashboard avec explication.

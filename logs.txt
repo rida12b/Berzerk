@@ -1,0 +1,41 @@
+<prompt_cursor><objectif>Restaurer la méthode start manquante et corriger l'initialisation des flux RSS pour résoudre l'erreur de démarrage.</objectif><fichiers_en_contexte>
+real_time_rss_monitor.py
+</fichiers_en_contexte><tache>
+- Ouvre real_time_rss_monitor.py.
+- 1. Restaurer la méthode start() : La méthode start() est manquante. Recrée-la juste avant la méthode display_stats(). Le corps de cette fonction doit contenir la logique qui gère le cycle de vie du moniteur. Voici le code exact de la méthode à insérer :
+```python
+def start(self):
+"""Démarre la surveillance temps réel"""
+self.log("🚀 DÉMARRAGE DE LA SURVEILLANCE TEMPS RÉEL", "SUCCESS")
+self.log(f"⚡ Polling: {self.poll_interval} secondes")
+self.log("⏹️ Arrêt: Ctrl+C")
+code
+Code
+# Initialiser la base de données
+      init_db()
+
+      # Démarrer le thread de surveillance
+      self.running = True
+      monitor_thread = threading.Thread(target=self.monitoring_thread, daemon=True)
+      monitor_thread.start()
+
+      try:
+          # Boucle principale avec affichage des stats
+          while True:
+              time.sleep(30)  # Afficher les stats toutes les 30 secondes
+              self.display_stats()
+
+      except KeyboardInterrupt:
+          self.log("🛑 Arrêt demandé par l'utilisateur", "WARNING")
+      finally:
+          self.running = False
+          self.log("👋 Surveillance temps réel arrêtée", "SUCCESS")
+          self.display_stats()
+  ```
+- **2. Corriger l'initialisation des flux :** L'initialisation des flux doit utiliser la configuration chargée, pas une variable globale inexistante.
+    - Dans la méthode `__init__` de la classe `RealTimeRSSMonitor`, localise l'appel `self.init_feeds_state()`.
+    - Juste avant, tu as la ligne `feeds = self.load_feeds_from_config()`. Passe ce dictionnaire de flux à la méthode, comme ceci : `self.init_feeds_state(feeds)`.
+- **3. Mettre à jour la méthode `init_feeds_state` :**
+    - Modifie la signature de la méthode pour qu'elle accepte cet argument : `def init_feeds_state(self, feeds: dict):`.
+    - À l'intérieur de cette méthode, la boucle doit maintenant itérer sur `feeds.items()` et non plus sur `RSS_FEEDS.items()`.
+</tache></prompt_cursor>

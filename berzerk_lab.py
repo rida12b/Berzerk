@@ -43,6 +43,25 @@ def init_db():
     """
     )
 
+    # Nouvelle table pour le suivi persistant des positions (trades)
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id INTEGER,
+            ticker TEXT NOT NULL,
+            decision_type TEXT NOT NULL,
+            entry_at DATETIME NOT NULL,
+            entry_price REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'OPEN',
+            exit_at DATETIME,
+            exit_price REAL,
+            pnl_percent REAL,
+            FOREIGN KEY(article_id) REFERENCES articles(id)
+        )
+    """
+    )
+
     # Ajouter les nouvelles colonnes si elles n'existent pas (pour les anciennes bases)
     try:
         cursor.execute("ALTER TABLE articles ADD COLUMN status TEXT DEFAULT 'pending'")
@@ -88,8 +107,7 @@ except Exception as e:
     )
     llm = None
 
-# Liste des flux RSS fonctionnels (après notre diagnostic)
-RSS_FEEDS = {"Bloomberg": "https://feeds.bloomberg.com/markets/news.rss"}
+# Liste des flux RSS désormais centralisée dans config.ini
 
 # --- FONCTIONS CORE ---
 
@@ -228,8 +246,9 @@ with left_column:
 
     if st.button("🔄 Charger les dernières actualités", use_container_width=True):
         with st.spinner("Recherche de nouveaux articles..."):
-            # 1. On cherche et stocke les nouveaux articles
-            new_count = fetch_and_store_news(RSS_FEEDS)
+            # 1. On cherche et stocke les nouveaux articles (sources définies côté backend)
+            # Note: les sources RSS sont désormais gérées depuis config.ini et utilisées par le monitor temps réel
+            new_count = fetch_and_store_news({})
             st.toast(f"{new_count} nouvel(s) article(s) trouvé(s) !")
             # 2. On recharge la liste COMPLÈTE et TRIÉE depuis la DB
             st.session_state.articles = get_articles_from_db()
