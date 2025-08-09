@@ -71,11 +71,12 @@ class RealTimeRSSMonitor:
     """Surveillant RSS temps réel avec optimisations avancées"""
 
     def __init__(self, poll_interval: int = 30, capital: float = 25000.0):
+        # Heure de démarrage du moniteur (filtre temporel)
+        self.startup_time = datetime.now()
         self.poll_interval = poll_interval  # En secondes
         self.capital = capital
         self.feeds_state: dict[str, FeedState] = {}
         self.running = False
-        self.processed_articles: set[str] = set()
         self.stats = {
             "total_checks": 0,
             "new_articles_found": 0,
@@ -97,7 +98,6 @@ class RealTimeRSSMonitor:
 
         # Initialisation
         self.init_feeds_state()
-        self.load_processed_articles()
 
         print("🚀 BERZERK Real-Time RSS Monitor initialisé")
         print(f"   ⚡ Polling: {poll_interval} secondes (haute fréquence)")
@@ -107,7 +107,10 @@ class RealTimeRSSMonitor:
             print(f"   📡 {feed_name}: {feed_url}")
         print(f"   💰 Capital: {capital:,.2f}€")
         print("   🔄 Optimisations: ETags, Last-Modified, Threading")
-        print(f"   📊 Articles déjà traités: {len(self.processed_articles)}")
+        self.log(
+            f"✅ Moniteur démarré. Seules les news publiées après {self.startup_time.strftime('%Y-%m-%d %H:%M:%S')} seront traitées.",
+            "SUCCESS",
+        )
         print("-" * 70)
 
     def init_feeds_state(self):
@@ -123,22 +126,6 @@ class RealTimeRSSMonitor:
         if "RSS_FEEDS" not in config:
             return {}
         return dict(config["RSS_FEEDS"])  # name -> url
-
-    def load_processed_articles(self):
-        """Charge les articles déjà traités depuis la base de données"""
-        try:
-            conn = sqlite3.connect("berzerk.db")
-            cursor = conn.cursor()
-            # Charger TOUS les articles existants (peu importe le statut)
-            cursor.execute("SELECT link FROM articles")
-            self.processed_articles = {row[0] for row in cursor.fetchall()}
-            conn.close()
-
-            self.log(f"📥 {len(self.processed_articles)} articles existants chargés")
-            self.log("🎯 Seuls les vrais nouveaux articles RSS seront traités")
-        except Exception as e:
-            self.log(f"⚠️ Erreur lors du chargement des articles traités: {e}")
-            self.processed_articles = set()
 
     def log(self, message: str, level: str = "INFO"):
         """Logger avec timestamp et niveau"""
@@ -207,34 +194,32 @@ class RealTimeRSSMonitor:
             for entry in feed.entries:
                 article_link = entry.get("link", "")
 
-                # ✅ CORRECTION : Ne vérifier que processed_articles (pas articles_cache)
-                if article_link and article_link not in self.processed_articles:
-
-                    # Marquer immédiatement comme traité pour éviter les doublons
-                    self.processed_articles.add(article_link)
-
-                    # Extraction des métadonnées
-                    published_date = None
-                    if hasattr(entry, "published_parsed") and entry.published_parsed:
-                        published_date = datetime(*entry.published_parsed[:6])
-                    elif hasattr(entry, "published"):
-                        try:
-                            published_date = parsedate_to_datetime(entry.published)
-                        except Exception:
-                            published_date = datetime.now()
-                    else:
+                # Extraction des métadonnées
+                published_date = None
+                if hasattr(entry, "published_parsed") and entry.published_parsed:
+                    published_date = datetime(*entry.published_parsed[:6])
+                elif hasattr(entry, "published"):
+                    try:
+                        published_date = parsedate_to_datetime(entry.published)
+                    except Exception:
                         published_date = datetime.now()
+                else:
+                    published_date = datetime.now()
 
-                    article = {
-                        "title": entry.get("title", "Titre non disponible"),
-                        "link": article_link,
-                        "published_date": published_date,
-                        "summary": entry.get("summary", ""),
-                        "source": feed_state.url,
-                        "discovered_at": datetime.now(),
-                    }
+                # Nouveau filtre temporel: ignorer les articles plus anciens que l'heure de démarrage
+                if published_date < self.startup_time:
+                    continue
 
-                    new_articles.append(article)
+                article = {
+                    "title": entry.get("title", "Titre non disponible"),
+                    "link": article_link,
+                    "published_date": published_date,
+                    "summary": entry.get("summary", ""),
+                    "source": feed_state.url,
+                    "discovered_at": datetime.now(),
+                }
+
+                new_articles.append(article)
 
             # Succès - reset des erreurs
             feed_state.consecutive_errors = 0
@@ -313,9 +298,6 @@ class RealTimeRSSMonitor:
             if result and "final_decision" in result:
                 # Sauvegarde de la décision
                 self.save_decision_to_db(article["link"], result["final_decision"])
-
-                # Marquer comme traité
-                self.processed_articles.add(article["link"])
 
                 # Statistiques
                 self.stats["analyses_completed"] += 1
@@ -493,7 +475,7 @@ class RealTimeRSSMonitor:
         print(f"📈 Nouveaux articles: {self.stats['new_articles_found']}")
         print(f"🤖 Analyses complètes: {self.stats['analyses_completed']}")
         print(f"❌ Erreurs: {self.stats['errors']}")
-        print(f"💾 Articles en cache: {len(self.processed_articles)}")
+        # Cache supprimé: on n'utilise plus de cache d'articles en mémoire
         print("=" * 50)
 
     def start(self):
